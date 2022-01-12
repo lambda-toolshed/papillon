@@ -131,10 +131,9 @@ Because the interceptor executor takes a sequence of interceptors to build the p
 
 (defn run
   []
-  (ix/execute {}
-              (with-tracing ix-chains)
-              (fn [ctx] (println "SUCCESS!!!!" ctx))
-              (fn [ctx] (println "ERROR!!!!" ctx)))
+  (go
+    (let [c (ix/execute {} (with-tracing ix-chains))]
+      (println (<! c)))))
 ```
 
 ### Nesting Interceptor Executions
@@ -246,8 +245,7 @@ A basic non-prod, pseudo code, example may look like:
       (println (<! c)))))
 ```
 
-This example could be extended to support keyword hierarchies and walk up the stack multiple
-times for each of the ancestors of a keyword to see if there is a more generic handler as well.
+This example could be extended to support keyword hierarchies and walk up the stack multiple times for each of the ancestors of a keyword to see if there is a more generic handler as well.
 
 ## Sponsored by Guaranteed Rate
 

@@ -194,6 +194,20 @@
             (println "Don't know how to handle the error, but have to clean up after myself 🧹 🗑️")
             (dissoc ctx :db-connection))})
 
+;; sometimes you want to do a "finally" style of clean up when working through the stack
+;; that gets invoked on both the :leave and :error chain
+;; a let over a def can help with that...
+(letfn [(cleanup [ctx]
+          (println "🎵Clean Up, Pick Up, Put Away. 🎵 🐯🧹🗑️")
+          (dissoc ctx :db-connection))]
+  (def finally-style-cleanup-error-handler-ix
+    {:name :resource-cleanup-error-handler-ix
+     :enter (fn [ctx]
+              (println "Opening DB Connection")
+              (assoc ctx :db-connection :chewing-up-a-thread-pool-resource))
+     :leave cleanup
+     :error cleanup}))
+
 ;; Error handlers don't have to resolve, they may transform the result, or
 ;; take some other action if needed
 (def transforming-error-handler-ix
