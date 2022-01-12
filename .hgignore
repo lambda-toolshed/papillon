@@ -1,0 +1,19 @@
+syntax: glob
+*.jar
+*.class
+.cpcache/**
+.gitignore
+.git/**
+.lsp/.cache
+.lsp/sqlite.db
+
+syntax: regexp
+^.calva/output-window/
+^.lein-.*
+^.nrepl-history
+^.nrepl-port
+^.rebel_readline_history
+^.socket-repl-port
+^target/
+^classes/
+^checkouts/

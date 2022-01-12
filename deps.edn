@@ -1,0 +1,61 @@
+{:paths ["src" "resources"]
+ :deps {org.clojure/clojure {:mvn/version "1.10.3"}
+        org.clojure/clojurescript {:mvn/version "1.10.773"}
+        org.clojure/core.async {:mvn/version "1.3.618"}}
+ :aliases
+ {:build {:deps {io.github.seancorfield/build-clj
+                 {:git/tag "v0.6.4" :git/sha "c21cfde"}}
+          :ns-default build}
+  :dev {:extra-paths ["dev"]}
+  :test {:extra-paths ["test"]
+         :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}
+                      io.github.cognitect-labs/test-runner {:git/tag "v0.5.0" :git/sha "48c3c67"}}}
+
+  :project/test-cljs {:main-opts ["-m" "cljs-test-runner.main"]
+                      :extra-deps {olical/cljs-test-runner {:mvn/version "3.8.0"}}
+                      :jvm-opts ["-DENVIRONMENT=test"]}
+
+  ;; clj -M:test:project/test-clj
+  :project/test-clj {:main-opts ["-m" "cognitect.test-runner"]
+                     :extra-deps {com.cognitect/test-runner {:git/url "https://github.com/cognitect-labs/test-runner.git"
+                                                             :sha "b6b3193fcc42659d7e46ecd1884a228993441182"}
+                                  ;; for e2e tests
+                                  etaoin/etaoin {:mvn/version "0.4.0"}}
+                     :jvm-opts ["-DENVIRONMENT=test"]}
+  ;; for interactive test running
+  ;; this assumes cljs has already been compiled
+  :project/test-watch {:main-opts ["-m" "kaocha.runner" "--watch"]
+                       :extra-deps {com.cognitect/test-runner {:git/url "https://github.com/cognitect-labs/test-runner.git"
+                                                               :sha "b6b3193fcc42659d7e46ecd1884a228993441182"}
+                                    etaoin/etaoin {:mvn/version "0.4.0"}
+                                    lambdaisland/kaocha {:mvn/version "1.60.977"}}
+                       :jvm-opts ["-DENVIRONMENT=test"]}
+
+  :project/test {:extra-deps {lambdaisland/kaocha {:mvn/version "1.60.977"}}
+                 :exec-fn kaocha.runner/exec-fn
+                 :exec-args {}}
+  :project/watch-test {:extra-deps {lambdaisland/kaocha {:mvn/version "1.60.977"}}
+                       :exec-fn kaocha.runner/exec-fn
+                       :exec-args {:watch? true
+                                   :skip-meta :slow
+                                   :fail-fast? true}}
+  ;; --------------------------- Build/Deploy Tasks ----------------------------
+  ;; Bump the version by a patch and generate a corresponding pom file with the groupId "com.hapgood"
+  ;; $ clojure -M:project/pom patch -t IncrementType
+  :project/pom {:main-opts ["-m" "garamond.main" "--group-id" "lambda-toolshed"
+                            "--scm-url" "https://github.com/lambda-toolshed/papillon" "-p"]
+                ;; because we don't need the project's dependencies loaded -graph parses the deps.edn "out-of-band":
+                :replace-deps {com.workframe/garamond {:mvn/version "0.4.0"}}}
+
+  :lint/kondo {:extra-deps {clj-kondo/clj-kondo {:mvn/version "RELEASE"}}
+               :main-opts  ["-m" "clj-kondo.main" "--lint" "src"]}
+
+  :project/cljs-nrepl {:main-opts ["-m" "nrepl.cmdline" "--middleware" "[\"cider.piggieback/wrap-cljs-repl\"]"]
+                       :extra-deps  {nrepl/nrepl  {:mvn/version "0.9.0"}
+                                     cider/piggieback {:mvn/version "0.5.3"}}}
+
+  :project/nrepl {:main-opts ["-m" "nrepl.cmdline" "--middleware" "[\"cider.nrepl/cider-middleware\"]"]
+                  :extra-deps {nrepl/nrepl {:mvn/version "0.9.0"}
+                               cider/cider-nrepl {:mvn/version "0.25.9"}}
+                  :jvm-opts ["-DENVIRONMENT=staging"]}}}
+
