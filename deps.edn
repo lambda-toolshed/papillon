@@ -50,6 +50,9 @@
   :lint/kondo {:extra-deps {clj-kondo/clj-kondo {:mvn/version "RELEASE"}}
                :main-opts  ["-m" "clj-kondo.main" "--lint" "src"]}
 
+  :project/format {:extra-deps {cljfmt/cljfmt {:mvn/version "0.8.0"}}
+                   :main-opts  ["-m" "cljfmt.main" "fix"]}
+
   :project/cljs-nrepl {:main-opts ["-m" "nrepl.cmdline" "--middleware" "[\"cider.piggieback/wrap-cljs-repl\"]"]
                        :extra-deps  {nrepl/nrepl  {:mvn/version "0.9.0"}
                                      cider/piggieback {:mvn/version "0.5.3"}}}

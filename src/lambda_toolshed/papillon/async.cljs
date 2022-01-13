@@ -7,8 +7,8 @@
   ReadPort
   (take! [this handler]
     (->
-      this
-      p->c
-      (#(core.async/take 1 %))
-      (clojure.core.async.impl.protocols/take! handler))))
+     this
+     p->c
+     (#(core.async/take 1 %))
+     (clojure.core.async.impl.protocols/take! handler))))
 

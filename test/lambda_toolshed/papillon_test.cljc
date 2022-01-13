@@ -69,205 +69,205 @@
 
 (deftest allows-for-empty-chain-of-interceptors
   (go-test
-    (let [c (ix/execute {} [])
-          [res p] (alts! [c (async/timeout 10)])]
-      (is (= p c))
-      (is (empty? (:lambda-toolshed.papillon/queue res)))
-      (is (empty? (:lambda-toolshed.papillon/stack res))))))
+   (let [c (ix/execute {} [])
+         [res p] (alts! [c (async/timeout 10)])]
+     (is (= p c))
+     (is (empty? (:lambda-toolshed.papillon/queue res)))
+     (is (empty? (:lambda-toolshed.papillon/stack res))))))
 
 (deftest allows-for-interceptor-chain-of-only-enters
   (go-test
-    (let [ixs [track-enter-ix]
-          c (ix/execute invocation-tracking-ctx ixs)
-          [res p] (alts! [c (async/timeout 10)])]
-      (is (= p c))
-      (is (empty? (:lambda-toolshed.papillon/queue res)))
-      (is (empty? (:lambda-toolshed.papillon/stack res)))
-      (is (= 1 (:enter-invocation-counts res)))
-      (is (= 0 (:leave-invocation-counts res)))
-      (is (= 0 (:error-invocation-counts res))))))
+   (let [ixs [track-enter-ix]
+         c (ix/execute invocation-tracking-ctx ixs)
+         [res p] (alts! [c (async/timeout 10)])]
+     (is (= p c))
+     (is (empty? (:lambda-toolshed.papillon/queue res)))
+     (is (empty? (:lambda-toolshed.papillon/stack res)))
+     (is (= 1 (:enter-invocation-counts res)))
+     (is (= 0 (:leave-invocation-counts res)))
+     (is (= 0 (:error-invocation-counts res))))))
 
 (deftest allows-for-interceptor-chain-of-only-leaves
   (go-test
-    (let [ixs [track-leave-ix]
-          c (ix/execute invocation-tracking-ctx ixs)
-          [res p] (alts! [c (async/timeout 10)])]
-      (is (= p c))
-      (is (empty? (:lambda-toolshed.papillon/queue res)))
-      (is (empty? (:lambda-toolshed.papillon/stack res)))
-      (is (= 0 (:enter-invocation-counts res)))
-      (is (= 1 (:leave-invocation-counts res)))
-      (is (= 0 (:error-invocation-counts res))))))
+   (let [ixs [track-leave-ix]
+         c (ix/execute invocation-tracking-ctx ixs)
+         [res p] (alts! [c (async/timeout 10)])]
+     (is (= p c))
+     (is (empty? (:lambda-toolshed.papillon/queue res)))
+     (is (empty? (:lambda-toolshed.papillon/stack res)))
+     (is (= 0 (:enter-invocation-counts res)))
+     (is (= 1 (:leave-invocation-counts res)))
+     (is (= 0 (:error-invocation-counts res))))))
 
 (deftest allows-for-interceptor-chain-of-only-errors
   (go-test
-    (let [ixs [track-error-ix]
-          c (ix/execute invocation-tracking-ctx ixs)
-          [res p] (alts! [c (async/timeout 10)])]
-      (is (= p c))
-      (is (empty? (:lambda-toolshed.papillon/queue res)))
-      (is (empty? (:lambda-toolshed.papillon/stack res)))
-      (is (= 0 (:enter-invocation-counts res)))
-      (is (= 0 (:leave-invocation-counts res)))
-      (is (= 0 (:error-invocation-counts res))))))
+   (let [ixs [track-error-ix]
+         c (ix/execute invocation-tracking-ctx ixs)
+         [res p] (alts! [c (async/timeout 10)])]
+     (is (= p c))
+     (is (empty? (:lambda-toolshed.papillon/queue res)))
+     (is (empty? (:lambda-toolshed.papillon/stack res)))
+     (is (= 0 (:enter-invocation-counts res)))
+     (is (= 0 (:leave-invocation-counts res)))
+     (is (= 0 (:error-invocation-counts res))))))
 
 (deftest error-stage-is-never-invoked-if-no-error-has-been-thrown
   (go-test
-    (let [ixs (repeat 2 (merge track-enter-ix
-                               track-error-ix))
-          c (ix/execute invocation-tracking-ctx ixs)
-          [res p] (alts! [c (async/timeout 10)])]
-      (is (= p c))
-      (is (empty? (:lambda-toolshed.papillon/queue res)))
-      (is (empty? (:lambda-toolshed.papillon/stack res)))
-      (is (= 0 (:error-invocation-counts res))))))
+   (let [ixs (repeat 2 (merge track-enter-ix
+                              track-error-ix))
+         c (ix/execute invocation-tracking-ctx ixs)
+         [res p] (alts! [c (async/timeout 10)])]
+     (is (= p c))
+     (is (empty? (:lambda-toolshed.papillon/queue res)))
+     (is (empty? (:lambda-toolshed.papillon/stack res)))
+     (is (= 0 (:error-invocation-counts res))))))
 
 (deftest error-chain-is-invoked-when-enter-throws-an-exception
   (go-test
-    (let [the-exception (ex-info "the exception" {})
-          ixs [track-error-ix
-               track-error-ix
-               (merge (throws-ix :enter the-exception)
-                      track-error-ix)]
-          c (ix/execute invocation-tracking-ctx ixs)
-          [res p] (alts! [c (async/timeout 10)])]
-      (is (= p c))
-      (is (= the-exception (:lambda-toolshed.papillon/error res)))
-      (is (= 3 (:error-invocation-counts res))))))
+   (let [the-exception (ex-info "the exception" {})
+         ixs [track-error-ix
+              track-error-ix
+              (merge (throws-ix :enter the-exception)
+                     track-error-ix)]
+         c (ix/execute invocation-tracking-ctx ixs)
+         [res p] (alts! [c (async/timeout 10)])]
+     (is (= p c))
+     (is (= the-exception (:lambda-toolshed.papillon/error res)))
+     (is (= 3 (:error-invocation-counts res))))))
 
 (deftest error-chain-is-invoked-when-leave-throws-an-exception
   (go-test
-    (let [the-exception (ex-info "the exception" {})
-          ixs [track-error-ix
-               track-error-ix
-               (merge (throws-ix :leave the-exception)
-                      track-error-ix)]
-          c (ix/execute invocation-tracking-ctx ixs)
-          [res p] (alts! [c (async/timeout 10)])]
-      (is (= p c))
-      (is (= the-exception (:lambda-toolshed.papillon/error res)))
-      (is (= 2 (:error-invocation-counts res))))))
+   (let [the-exception (ex-info "the exception" {})
+         ixs [track-error-ix
+              track-error-ix
+              (merge (throws-ix :leave the-exception)
+                     track-error-ix)]
+         c (ix/execute invocation-tracking-ctx ixs)
+         [res p] (alts! [c (async/timeout 10)])]
+     (is (= p c))
+     (is (= the-exception (:lambda-toolshed.papillon/error res)))
+     (is (= 2 (:error-invocation-counts res))))))
 
 (deftest leave-chain-is-reinvoked-when-an-error-processor-removed-the-error-key
   (go-test
-    (let [the-exception (ex-info "the exception" {})
-          ixs [track-leave-ix
-               track-leave-ix
-               {:error (fn [ctx]
-                         (-> ctx
-                             (#(track-invocation :error %))
-                             (dissoc :lambda-toolshed.papillon/error)))}
-               (merge (throws-ix :leave the-exception)
-                      track-error-ix)]
-          c (ix/execute invocation-tracking-ctx ixs)
-          [res p] (alts! [c (async/timeout 10)])]
-      (is (= p c))
-      (is (not (contains? res :lambda-toolshed.papillon/error)))
-      (is (= 1 (:error-invocation-counts res)))
-      (is (= 2 (:leave-invocation-counts res))))))
+   (let [the-exception (ex-info "the exception" {})
+         ixs [track-leave-ix
+              track-leave-ix
+              {:error (fn [ctx]
+                        (-> ctx
+                            (#(track-invocation :error %))
+                            (dissoc :lambda-toolshed.papillon/error)))}
+              (merge (throws-ix :leave the-exception)
+                     track-error-ix)]
+         c (ix/execute invocation-tracking-ctx ixs)
+         [res p] (alts! [c (async/timeout 10)])]
+     (is (= p c))
+     (is (not (contains? res :lambda-toolshed.papillon/error)))
+     (is (= 1 (:error-invocation-counts res)))
+     (is (= 2 (:leave-invocation-counts res))))))
 
 (deftest reduced-context-stops-enter-chain-processing
   (go-test
-    (let [post-reduced-ix-calls (atom [])
-          starting-ctx {:enter-invocation-counts 0
-                        :leave-invocation-counts 0
-                        :error-invocation-counts 0}
-          ixs [(merge track-enter-ix
-                      track-leave-ix)
-               (merge {:enter reduced}
-                      track-leave-ix)
-               {:enter (fn [ctx] (swap! post-reduced-ix-calls conj ctx))
-                :leave (fn [_] (throw (ex-info "should not process leaves of interceptors in the queue after a reduced value" {})))}]
-          c (ix/execute starting-ctx ixs)
-          [res p] (alts! [c (async/timeout 10)])]
-      (is (= p c))
-      (is (= [] @post-reduced-ix-calls))
-      (is (= 1 (:enter-invocation-counts res)))
-      (is (= 2 (:leave-invocation-counts res))))))
+   (let [post-reduced-ix-calls (atom [])
+         starting-ctx {:enter-invocation-counts 0
+                       :leave-invocation-counts 0
+                       :error-invocation-counts 0}
+         ixs [(merge track-enter-ix
+                     track-leave-ix)
+              (merge {:enter reduced}
+                     track-leave-ix)
+              {:enter (fn [ctx] (swap! post-reduced-ix-calls conj ctx))
+               :leave (fn [_] (throw (ex-info "should not process leaves of interceptors in the queue after a reduced value" {})))}]
+         c (ix/execute starting-ctx ixs)
+         [res p] (alts! [c (async/timeout 10)])]
+     (is (= p c))
+     (is (= [] @post-reduced-ix-calls))
+     (is (= 1 (:enter-invocation-counts res)))
+     (is (= 2 (:leave-invocation-counts res))))))
 
 (deftest allows-for-interceptor-chain-of-only-async-enters
   (go-test
-    (let [ixs [track-enter-async-ix]
-          c (ix/execute invocation-tracking-ctx ixs)
-          timeout (async/timeout 100)
-          [res p] (alts! [c timeout])]
-      (is (= p c))
-      (is (empty? (:lambda-toolshed.papillon/queue res)))
-      (is (empty? (:lambda-toolshed.papillon/stack res)))
-      (is (= 1 (:enter-invocation-counts res)))
-      (is (= 0 (:leave-invocation-counts res)))
-      (is (= 0 (:error-invocation-counts res))))))
+   (let [ixs [track-enter-async-ix]
+         c (ix/execute invocation-tracking-ctx ixs)
+         timeout (async/timeout 100)
+         [res p] (alts! [c timeout])]
+     (is (= p c))
+     (is (empty? (:lambda-toolshed.papillon/queue res)))
+     (is (empty? (:lambda-toolshed.papillon/stack res)))
+     (is (= 1 (:enter-invocation-counts res)))
+     (is (= 0 (:leave-invocation-counts res)))
+     (is (= 0 (:error-invocation-counts res))))))
 
 (deftest allows-for-interceptor-chain-of-only-async-leaves
   (go-test
-    (let [ixs [track-leave-async-ix]
-          c (ix/execute invocation-tracking-ctx ixs)
-          timeout (async/timeout 100)
-          [res p] (alts! [c timeout])]
-      (is (= p c))
-      (is (empty? (:lambda-toolshed.papillon/queue res)))
-      (is (empty? (:lambda-toolshed.papillon/stack res)))
-      (is (= 0 (:enter-invocation-counts res)))
-      (is (= 1 (:leave-invocation-counts res)))
-      (is (= 0 (:error-invocation-counts res))))))
+   (let [ixs [track-leave-async-ix]
+         c (ix/execute invocation-tracking-ctx ixs)
+         timeout (async/timeout 100)
+         [res p] (alts! [c timeout])]
+     (is (= p c))
+     (is (empty? (:lambda-toolshed.papillon/queue res)))
+     (is (empty? (:lambda-toolshed.papillon/stack res)))
+     (is (= 0 (:enter-invocation-counts res)))
+     (is (= 1 (:leave-invocation-counts res)))
+     (is (= 0 (:error-invocation-counts res))))))
 
 (deftest allows-for-interceptor-chain-of-only-aysnc-errors
   (go-test
-    (let [ixs [track-error-async-ix]
-          c (ix/execute invocation-tracking-ctx ixs)
-          timeout (async/timeout 100)
-          [res p] (alts! [c timeout])]
-      (is (= p c))
-      (is (empty? (:lambda-toolshed.papillon/queue res)))
-      (is (empty? (:lambda-toolshed.papillon/stack res)))
-      (is (= 0 (:enter-invocation-counts res)))
-      (is (= 0 (:leave-invocation-counts res)))
-      (is (= 0 (:error-invocation-counts res)) "Error chain was invoked with no error thrown"))))
+   (let [ixs [track-error-async-ix]
+         c (ix/execute invocation-tracking-ctx ixs)
+         timeout (async/timeout 100)
+         [res p] (alts! [c timeout])]
+     (is (= p c))
+     (is (empty? (:lambda-toolshed.papillon/queue res)))
+     (is (empty? (:lambda-toolshed.papillon/stack res)))
+     (is (= 0 (:enter-invocation-counts res)))
+     (is (= 0 (:leave-invocation-counts res)))
+     (is (= 0 (:error-invocation-counts res)) "Error chain was invoked with no error thrown"))))
 
 (deftest error-chain-is-invoked-when-async-enter-returns-an-exception
   (go-test
-    (let [the-exception (ex-info "the exception" {})
-          ixs [track-error-ix
-               track-error-ix
-               (merge (async-returns-error-ix :enter the-exception)
-                      track-error-ix)]
-          c (ix/execute invocation-tracking-ctx ixs)
-          timeout (async/timeout 100)
-          [res p] (alts! [c timeout])]
-      (is (= p c))
-      (is (= the-exception (:lambda-toolshed.papillon/error res)))
-      (is (= 3 (:error-invocation-counts res))))))
+   (let [the-exception (ex-info "the exception" {})
+         ixs [track-error-ix
+              track-error-ix
+              (merge (async-returns-error-ix :enter the-exception)
+                     track-error-ix)]
+         c (ix/execute invocation-tracking-ctx ixs)
+         timeout (async/timeout 100)
+         [res p] (alts! [c timeout])]
+     (is (= p c))
+     (is (= the-exception (:lambda-toolshed.papillon/error res)))
+     (is (= 3 (:error-invocation-counts res))))))
 
 (deftest error-chain-is-invoked-when-async-leave-returns-an-exception
   (go-test
-    (let [the-exception (ex-info "the exception" {})
-          ixs [track-error-ix
-               track-error-ix
-               (merge (async-returns-error-ix :leave the-exception)
-                      track-error-ix)]
-          c (ix/execute invocation-tracking-ctx ixs)
-          timeout (async/timeout 100)
-          [res p] (alts! [c timeout])]
-      (is (= p c))
-      (is (= the-exception (:lambda-toolshed.papillon/error res)))
-      (is (= 2 (:error-invocation-counts res))))))
+   (let [the-exception (ex-info "the exception" {})
+         ixs [track-error-ix
+              track-error-ix
+              (merge (async-returns-error-ix :leave the-exception)
+                     track-error-ix)]
+         c (ix/execute invocation-tracking-ctx ixs)
+         timeout (async/timeout 100)
+         [res p] (alts! [c timeout])]
+     (is (= p c))
+     (is (= the-exception (:lambda-toolshed.papillon/error res)))
+     (is (= 2 (:error-invocation-counts res))))))
 
 (deftest leave-chain-is-reinvoked-when-an-error-processor-removed-the-error-key-in-async-error-handler
   (go-test
-    (let [the-exception (ex-info "the exception" {})
-          ixs [track-leave-ix
-               track-leave-ix
-               {:error (fn [ctx]
-                         (go
-                           (-> ctx
-                               (#(track-invocation :error %))
-                               (dissoc :lambda-toolshed.papillon/error))))}
-               (merge (async-returns-error-ix :leave the-exception)
-                      track-error-ix)]
-          c (ix/execute invocation-tracking-ctx ixs)
-          timeout (async/timeout 100)
-          [res p] (alts! [c timeout])]
-      (is (= p c))
-      (is (not (contains? res :lambda-toolshed.papillon/error)))
-      (is (= 1 (:error-invocation-counts res)))
-      (is (= 2 (:leave-invocation-counts res))))))
+   (let [the-exception (ex-info "the exception" {})
+         ixs [track-leave-ix
+              track-leave-ix
+              {:error (fn [ctx]
+                        (go
+                          (-> ctx
+                              (#(track-invocation :error %))
+                              (dissoc :lambda-toolshed.papillon/error))))}
+              (merge (async-returns-error-ix :leave the-exception)
+                     track-error-ix)]
+         c (ix/execute invocation-tracking-ctx ixs)
+         timeout (async/timeout 100)
+         [res p] (alts! [c timeout])]
+     (is (= p c))
+     (is (not (contains? res :lambda-toolshed.papillon/error)))
+     (is (= 1 (:error-invocation-counts res)))
+     (is (= 2 (:leave-invocation-counts res))))))
