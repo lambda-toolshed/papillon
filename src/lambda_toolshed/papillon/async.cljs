@@ -11,4 +11,3 @@
      p->c
      (#(core.async/take 1 %))
      (clojure.core.async.impl.protocols/take! handler))))
-

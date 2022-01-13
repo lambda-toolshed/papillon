@@ -20,7 +20,7 @@
    (into-queue nil xs))
   ([q xs]
    ((fnil into #?(:clj clojure.lang.PersistentQueue/EMPTY
-                  :cljs cljs.core.PersistentQueue.EMPTY)) q xs)))
+                  :cljs cljs.core/PersistentQueue.EMPTY)) q xs)))
 
 (defn enqueue
   [ctx ixs]

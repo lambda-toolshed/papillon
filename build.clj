@@ -4,17 +4,42 @@
             [org.corfield.build :as bb]))
 
 (def lib 'net.clojars.lambda-toolshed/papillon)
-(def version "0.1.0-SNAPSHOT")
+
+(def version "0.1.0-alpha.SNAPSHOT")
 #_; alternatively, use MAJOR.MINOR.COMMITS:
   (def version (format "1.0.%s" (b/git-count-revs nil)))
 
-(defn test "Run the tests." [opts]
-  (bb/run-tests opts))
+(defn test-clj "Run the Clojure tests." [opts]
+  (-> opts
+      (bb/run-tests)))
+
+(defn test-cljs "Run the ClojureScript tests." [opts]
+  (-> opts
+      (bb/run-task [:test :project/test-cljs])))
+
+(defn test-all "Run all the tests." [opts]
+  (-> opts
+      (test-clj)
+      (test-cljs)))
+
+(defn lint "Run the linter." [opts]
+  (-> opts
+      (bb/run-task [:lint/kondo])))
+
+(defn ensure-format "Run the formatter." [opts]
+  (-> opts
+      (bb/run-task [:project/format])))
+
+(defn format-check "Run the formatter for validation." [opts]
+  (-> opts
+      (bb/run-task [:project/format-check])))
 
 (defn ci "Run the CI pipeline of tests (and build the JAR)." [opts]
   (-> opts
       (assoc :lib lib :version version)
-      (bb/run-tests)
+      (format-check)
+      (lint)
+      (test-all)
       (bb/clean)
       (bb/jar)))
 

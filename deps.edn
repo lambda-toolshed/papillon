@@ -9,31 +9,18 @@
   :dev {:extra-paths ["dev"]}
   :test {:extra-paths ["test"]
          :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}
-                      io.github.cognitect-labs/test-runner {:git/tag "v0.5.0" :git/sha "48c3c67"}}}
+                      io.github.cognitect-labs/test-runner {:git/tag "v0.5.0" :git/sha "48c3c67"}}
+         :jvm-opts ["-DENVIRONMENT=test"]}
 
   :project/test-cljs {:main-opts ["-m" "cljs-test-runner.main"]
                       :extra-deps {olical/cljs-test-runner {:mvn/version "3.8.0"}}
                       :jvm-opts ["-DENVIRONMENT=test"]}
 
-  ;; clj -M:test:project/test-clj
-  :project/test-clj {:main-opts ["-m" "cognitect.test-runner"]
-                     :extra-deps {com.cognitect/test-runner {:git/url "https://github.com/cognitect-labs/test-runner.git"
-                                                             :sha "b6b3193fcc42659d7e46ecd1884a228993441182"}
-                                  ;; for e2e tests
-                                  etaoin/etaoin {:mvn/version "0.4.0"}}
-                     :jvm-opts ["-DENVIRONMENT=test"]}
-  ;; for interactive test running
-  ;; this assumes cljs has already been compiled
-  :project/test-watch {:main-opts ["-m" "kaocha.runner" "--watch"]
-                       :extra-deps {com.cognitect/test-runner {:git/url "https://github.com/cognitect-labs/test-runner.git"
-                                                               :sha "b6b3193fcc42659d7e46ecd1884a228993441182"}
-                                    etaoin/etaoin {:mvn/version "0.4.0"}
-                                    lambdaisland/kaocha {:mvn/version "1.60.977"}}
-                       :jvm-opts ["-DENVIRONMENT=test"]}
+  :project/test-clj {:extra-deps {lambdaisland/kaocha {:mvn/version "1.60.977"}}
+                     :exec-fn kaocha.runner/exec-fn
+                     :exec-args {}}
 
-  :project/test {:extra-deps {lambdaisland/kaocha {:mvn/version "1.60.977"}}
-                 :exec-fn kaocha.runner/exec-fn
-                 :exec-args {}}
+  ;; for interactive test running
   :project/watch-test {:extra-deps {lambdaisland/kaocha {:mvn/version "1.60.977"}}
                        :exec-fn kaocha.runner/exec-fn
                        :exec-args {:watch? true
@@ -52,6 +39,9 @@
 
   :project/format {:extra-deps {cljfmt/cljfmt {:mvn/version "0.8.0"}}
                    :main-opts  ["-m" "cljfmt.main" "fix"]}
+
+  :project/format-check {:extra-deps {cljfmt/cljfmt {:mvn/version "0.8.0"}}
+                         :main-opts  ["-m" "cljfmt.main" "check"]}
 
   :project/cljs-nrepl {:main-opts ["-m" "nrepl.cmdline" "--middleware" "[\"cider.piggieback/wrap-cljs-repl\"]"]
                        :extra-deps  {nrepl/nrepl  {:mvn/version "0.9.0"}

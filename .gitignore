@@ -21,3 +21,4 @@ client/dist
 test-resources/
 cljs-test-runner-out
 .cljs_node_repl
+.make.*
