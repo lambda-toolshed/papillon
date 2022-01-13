@@ -40,7 +40,7 @@
                                    :skip-meta :slow
                                    :fail-fast? true}}
   ;; --------------------------- Build/Deploy Tasks ----------------------------
-  ;; Bump the version by a patch and generate a corresponding pom file with the groupId "com.hapgood"
+  ;; Bump the version by a patch and generate a corresponding pom file with the groupId "lambda-toolshed"
   ;; $ clojure -M:project/pom patch -t IncrementType
   :project/pom {:main-opts ["-m" "garamond.main" "--group-id" "lambda-toolshed"
                             "--scm-url" "https://github.com/lambda-toolshed/papillon" "-p"]

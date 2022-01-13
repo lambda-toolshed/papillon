@@ -1,17 +1,17 @@
 (ns lambda-toolshed.papillon
   (:require
-   [clojure.core.async :refer [go <! >! chan]]
+   [clojure.core.async :refer [<! go go-loop]]
    [clojure.core.async.impl.protocols :refer [ReadPort]]
    [lambda-toolshed.papillon.async]))
 
 ;;;; TODO: Official Support Interceptor names...
 ;;;;   format-context to show names?
 ;;;;   tracing with adding a name and stage call???
-;;;;   remove by name...
-;;;;     insert before
-;;;;     insert after
+;;;;     - remove by name ?
+;;;;     - insert before ?
+;;;;     - insert after ?
 
-;;;; TODO: Support logging/tracing
+;;;; TODO: Support logging/tracing?
 ;;;;   interceptor log protocol??
 ;;;;   support adding :before-stage and :after-stage callback as part of context?
 
@@ -84,21 +84,22 @@
   channel was returned, it doesn't halt if that channel is another
   channel, but continues until it gets a non-ReadPort value for the
   context."
-  [ctx]
-  (cond
-    (satisfies? ReadPort ctx) (go (enter (<! ctx)))
-    (:lambda-toolshed.papillon/error ctx) (clear-queue ctx)
-    (reduced? ctx) (clear-queue (unreduced ctx))
-    :else (let [queue (:lambda-toolshed.papillon/queue ctx)]
-            (if (empty? queue)
-              ctx
-              (let [ix (peek queue)
-                    new-queue (pop queue)
-                    new-stack (conj (:lambda-toolshed.papillon/stack ctx) ix)]
-                (recur (-> ctx
-                           (assoc :lambda-toolshed.papillon/queue new-queue
-                                  :lambda-toolshed.papillon/stack new-stack)
-                           (try-stage ix :enter))))))))
+  [res]
+  (go-loop [ctx res]
+    (cond
+      (satisfies? ReadPort ctx) (recur (<! ctx))
+      (:lambda-toolshed.papillon/error ctx) (clear-queue ctx)
+      (reduced? ctx) (clear-queue (unreduced ctx))
+      :else (let [queue (:lambda-toolshed.papillon/queue ctx)]
+              (if (empty? queue)
+                ctx
+                (let [ix (peek queue)
+                      new-queue (pop queue)
+                      new-stack (conj (:lambda-toolshed.papillon/stack ctx) ix)]
+                  (recur (-> ctx
+                             (assoc :lambda-toolshed.papillon/queue new-queue
+                                    :lambda-toolshed.papillon/stack new-stack)
+                             (try-stage ix :enter)))))))))
 
 (defn- leave
   "Runs the leave and error chain.  `run-leave` will run the `:lambda-toolshed.papillon/error`
@@ -113,20 +114,20 @@
   an error.
 
   If the function under the `:enter` key 'opened' a resource, you will
-  want to ensure it is closed in both the `:lambda-toolshed.papillon/error` and `:leave` case, as
-  either path may be taken on the way back up the interceptor chain."
-  [ctx]
-  (if (satisfies? ReadPort ctx)
-    (go (leave (<! ctx)))
-    (let [stack (:lambda-toolshed.papillon/stack ctx)]
-      (if (empty? stack)
-        ctx
-        (let [ix (peek stack)
-              new-stack (pop stack)
-              stage (if (:lambda-toolshed.papillon/error ctx) :error :leave)]
-          (recur (-> ctx
-                     (assoc :lambda-toolshed.papillon/stack new-stack)
-                     (try-stage ix stage))))))))
+  want to ensure it is closed in both the `:lambda-toolshed.papillon/error` and `:leave` case, as either path may be taken on the way back up the interceptor chain."
+  [res]
+  (go-loop [ctx res]
+    (if (satisfies? ReadPort ctx)
+      (recur (<! ctx))
+      (let [stack (:lambda-toolshed.papillon/stack ctx)]
+        (if (empty? stack)
+          ctx
+          (let [ix (peek stack)
+                new-stack (pop stack)
+                stage (if (:lambda-toolshed.papillon/error ctx) :error :leave)]
+            (recur (-> ctx
+                       (assoc :lambda-toolshed.papillon/stack new-stack)
+                       (try-stage ix stage)))))))))
 
 (defn- init-ctx
   "Sets up the context with the queue key and the stack key.
@@ -138,13 +139,12 @@
          :lambda-toolshed.papillon/stack []))
 
 (defn- await-result
-  "'Unwinds' any nested async calls, and will put the unwound result
-  on the results channel `c`."
-  [ctx c]
-  (go
+  "'Unwinds' any nested channels and returns the context"
+  [res]
+  (go-loop [ctx res]
     (if (satisfies? ReadPort ctx)
-      (await-result (<! ctx) c)
-      (>! c ctx))))
+      (recur (<! ctx))
+      ctx)))
 
 (defn execute
   "Executes the interceptor call chain as a queue.
@@ -167,10 +167,8 @@
   ([ixs]
    (execute {} ixs))
   ([ctx ixs]
-   (let [c (chan)
-         ctx (init-ctx ctx ixs)]
+   (let [ctx (init-ctx ctx ixs)]
      (-> ctx
          enter
          leave
-         (await-result c))
-     c)))
+         await-result))))
