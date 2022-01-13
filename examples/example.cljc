@@ -201,7 +201,7 @@
           (println "🎵Clean Up, Pick Up, Put Away. 🎵 🐯🧹🗑️")
           (dissoc ctx :db-connection))]
   (def finally-style-cleanup-error-handler-ix
-    {:name :resource-cleanup-error-handler-ix
+    {:name :finally-style-cleanup-error-handler-ix
      :enter (fn [ctx]
               (println "Opening DB Connection")
               (assoc ctx :db-connection :chewing-up-a-thread-pool-resource))
@@ -379,7 +379,7 @@
 ;; Interceptors can also manipulate the queue
 ;; this one uses `enqueue` to add more things to do
 (def ensure-even-with-tracing-ix
-  {:name :ensure-even-ix
+  {:name :ensure-even-with-tracing-ix
    :enter (fn [ctx]
             (if (even? (:number ctx))
               ctx
