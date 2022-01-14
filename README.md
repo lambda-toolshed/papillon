@@ -93,48 +93,7 @@ This is done by using `cljs.core.async.interop/p->c`, taking the `PromiseChannel
 
 Because the interceptor executor takes a sequence of interceptors to build the processing queue from, we can manipulate that before execution time as it is data.  In the example below, if we have tracing enabled, we interleave a tracing interceptor, could be a timing capture interceptor, with the standard interceptors we are expecting to process as part of the interceptor chain.
 
-```clojure
-;; trace is your function wrapping println, or logging framework tracing.
-;; prettify-ctx is something that might show the important parts of the context
-;;
-;; see examples/example.clj
-
-(defn prettify-ctx
-  "'Prettfies' the context for nicer output in whatever manner that might mean."
-  [ctx]
-  ;; munge the context to make it pretty
-  )
-
-(letfn [(describe [ix] (or (:name ix) ix))]
-  (def trace-ix
-    {:name :trace-ix
-     :enter (fn [ctx]
-              (trace (str "enter" (prettify-ctx ctx)))
-              ctx)
-     :leave (fn [ctx]
-              (trace (str "leaving" (prettify-ctx ctx)))
-              ctx)
-     :error (fn [ctx]
-              (trace (str "error" (prettify-ctx ctx)))
-              ctx)}))
-
-(def ix-chain
- ;; your sequence of interceptors to run live here
- ;; imagine a nice big list 20+ lines long...
-)
-
-(defn with-tracing
-  [ixs]
-  (if (tracing-enabled?)
-    (interleave (repeat trace-ix) ixs)
-    ixs))
-
-(defn run
-  []
-  (go
-    (let [c (ix/execute {} (with-tracing ix-chains))]
-      (println (<! c)))))
-```
+And example of this is found in [examples/example.cljc](./examples/example.cljc), and the `with-tracing` function that interleaves a tracing interceptor with a sequence of interceptors when in "debug" mode.
 
 ### Nesting Interceptor Executions
 
@@ -193,59 +152,7 @@ By giving a contract for the interceptor and interceptor execution one could imp
 
 Because you have visibility to the stack and the queue, as they are keys in the context map, you could walk up the stack looking for interceptors that have the key that was received as a "signal", and invoke a function associated with that key to attempt to handle the signal.  This allows you to unwind the stack, without unwinding the stack, because, as long as you don't return the modified context, you are working on a persistent data structure, and any modifications to the stack are a copy of the stack scoped to your usage.  Persistent Data Structures FOR THE WIN!!
 
-A basic non-prod, pseudo code, example may look like:
-
-```clojure
-(defn signal
-  [signal ctx & args]
-  (loop ([ix & ix-stack] (stack ctx))
-    (if ix
-      (if-let [f (signal ix)]
-        (apply f (conj ctx args))
-        (recur ix-stack))
-      (throw (ex-info "no signal handler found"
-                      {:signal signal
-                       :ctx ctx
-                       :args args})))))
-
-(defn retry-request
- [max-retry-count ctx request response]
- (let [url (:url request)
-      retry-count ( (get-in ctx [::request-retries url]))]
-   (if (> retry-count max-retry-count)
-     (throw "Too Many Failures" {:retry-count retry-count
-                                 :request-url url
-                                 :ctx ctx})
-     (-> ctx
-       (update-in [::request-retries url] (fnil inc 0))
-       requeue-current
-       stack-pop-current))))
-
-(def retry-ix
-  {:http-request-failed (partial retry-request 3)})
-
-(def request-ix
-  {:enter (fn [ctx]
-  (go
-    (try
-      (let [request (build-request ctx)
-            response (<! (request! request))]
-        (if (error? response)
-          (signal :http-request-failed ctx request response) ;; look for :http-request-failed in an interceptor on the stack
-          (assoc ctx :response response)))
-      (catch #?(:clj Exception :cljs default) e
-        e))))})
-
-(defn run
-  []
-  (go
-    (let [c (ix/execute {}
-              [retry-ix
-              request-ix])]
-      (println (<! c)))))
-```
-
-This example could be extended to support keyword hierarchies and walk up the stack multiple times for each of the ancestors of a keyword to see if there is a more generic handler as well.
+A basic example of this can be found in [examples/condition_system.cljc](./examples/condition_system.cljc), along with and advanced condition system that uses derived keywords, and the derivation hierarchy of a keyword signal.
 
 ## Sponsored by Guaranteed Rate
 
