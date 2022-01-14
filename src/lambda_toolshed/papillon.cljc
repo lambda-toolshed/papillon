@@ -84,10 +84,9 @@
   channel was returned, it doesn't halt if that channel is another
   channel, but continues until it gets a non-ReadPort value for the
   context."
-  [res]
-  (go-loop [ctx res]
-    (cond
-      (satisfies? ReadPort ctx) (recur (<! ctx))
+  [ctx]
+  (cond
+    (satisfies? ReadPort ctx) (go (enter (<! ctx)))
       (:lambda-toolshed.papillon/error ctx) (clear-queue ctx)
       (reduced? ctx) (clear-queue (unreduced ctx))
       :else (let [queue (:lambda-toolshed.papillon/queue ctx)]
@@ -99,7 +98,7 @@
                   (recur (-> ctx
                              (assoc :lambda-toolshed.papillon/queue new-queue
                                     :lambda-toolshed.papillon/stack new-stack)
-                             (try-stage ix :enter)))))))))
+                             (try-stage ix :enter))))))))
 
 (defn- leave
   "Runs the leave and error chain.  `run-leave` will run the `:lambda-toolshed.papillon/error`
@@ -115,10 +114,9 @@
 
   If the function under the `:enter` key 'opened' a resource, you will
   want to ensure it is closed in both the `:lambda-toolshed.papillon/error` and `:leave` case, as either path may be taken on the way back up the interceptor chain."
-  [res]
-  (go-loop [ctx res]
-    (if (satisfies? ReadPort ctx)
-      (recur (<! ctx))
+  [ctx]
+  (if (satisfies? ReadPort ctx)
+      (go (leave  (<! ctx)))
       (let [stack (:lambda-toolshed.papillon/stack ctx)]
         (if (empty? stack)
           ctx
@@ -127,7 +125,7 @@
                 stage (if (:lambda-toolshed.papillon/error ctx) :error :leave)]
             (recur (-> ctx
                        (assoc :lambda-toolshed.papillon/stack new-stack)
-                       (try-stage ix stage)))))))))
+                       (try-stage ix stage))))))))
 
 (defn- init-ctx
   "Sets up the context with the queue key and the stack key.

@@ -95,10 +95,8 @@
                        :response response
                        :ctx ctx}))
       (do
-        ;; Could make this be async and
-        ;; do a "sleep" (or timeout wait, etc) here as well
-        ;; to do exponential back off
-        (println "Fake sleeping for" (* ((fnil inc 0) retry-count) 10) "seconds")
+        ;; timeout to do exponential back off
+        (println "Fake timeout for" (* ((fnil inc 0) retry-count) 10) "seconds")
         (-> ctx
             (update-in [:lambda-toolshed.papillon.examples.condition-system/request-retries url] (fnil inc 0))
             requeue-current)))))
