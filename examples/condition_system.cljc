@@ -1,5 +1,5 @@
-(require '[lambda-toolshed.papillon :as papillon :refer [enqueue execute into-queue]])
-(require '[clojure.core.async :as async :refer [go <! >! chan]])
+(require '[lambda-toolshed.papillon :as papillon :refer [execute into-queue]])
+(require '[clojure.core.async :as async :refer [go <!]])
 (require 'clojure.pprint)
 
 (defn simple-signal

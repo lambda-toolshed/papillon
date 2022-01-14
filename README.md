@@ -95,6 +95,8 @@ Because the interceptor executor takes a sequence of interceptors to build the p
 
 And example of this is found in [examples/example.cljc](./examples/example.cljc), and the `with-tracing` function that interleaves a tracing interceptor with a sequence of interceptors when in "debug" mode.
 
+There is also an example of another tracing system that is a bit more advanced in [examples/dynamic_tracing.cljc](examples/dynamic_tracing.cljc), which will wraps every following interceptor in the queue with tracing/timing functions, if the interceptor map is marked with meta-data.
+
 ### Nesting Interceptor Executions
 
 By decoupling interceptors and keeping them generic, it opens up the possibility that you could nest interceptor chains within a larger context.
