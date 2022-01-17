@@ -1,13 +1,15 @@
 (ns build
   (:refer-clojure :exclude [test])
-  (:require [clojure.tools.build.api :as b] ; for b/git-count-revs
+  (:require [clojure.string :as str]
+            [clojure.tools.build.api :as b] ; for b/git-process
             [org.corfield.build :as bb]))
 
 (def lib 'net.clojars.lambda-toolshed/papillon)
 
-(def version "0.1.0-alpha.SNAPSHOT")
-#_; alternatively, use MAJOR.MINOR.COMMITS:
-  (def version (format "1.0.%s" (b/git-count-revs nil)))
+(def version
+  (-> (b/git-process {:git-args "describe --abbrev=4 --dirty"})
+      (or "0.0.0")
+      (str/replace #"^v" "")))
 
 (defn test-clj "Run the Clojure tests." [opts]
   (-> opts
