@@ -1,6 +1,8 @@
-(require '[lambda-toolshed.papillon :as papillon :refer [execute into-queue]])
-(require '[clojure.core.async :as async :refer [go <!]])
-(require 'clojure.pprint)
+(ns lambda-toolshed.papillon.examples.condition-system
+  (:require
+   [lambda-toolshed.papillon :as papillon :refer [execute into-queue]]
+   [clojure.core.async :as async :refer [go <!]]
+   clojure.pprint))
 
 (defn simple-signal
   "Walks up the interceptor stack looking for an interceptor

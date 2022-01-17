@@ -1,6 +1,8 @@
-(require '[lambda-toolshed.papillon :as papillon :refer [enqueue execute into-queue]])
-(require '[clojure.core.async :as async :refer [go <! >! chan]])
-(require 'clojure.pprint)
+(ns lambda-toolshed.papillon.examples.example
+  (:require
+   [lambda-toolshed.papillon :as papillon :refer [enqueue execute into-queue]]
+   [clojure.core.async :as async :refer [go <! >! chan]]
+   clojure.pprint))
 
 ;; Synchronous interceptor with that only handles items
 ;; on enter, and adds a new key to the context

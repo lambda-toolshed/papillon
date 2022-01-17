@@ -1,8 +1,8 @@
-(ns lambda-toolshed.papillon.examples.dynamic-tracing)
-
-(require '[lambda-toolshed.papillon :as papillon :refer [execute into-queue]])
-(require '[clojure.core.async :as async :refer [go <! >! chan]])
-(require 'clojure.pprint)
+(ns lambda-toolshed.papillon.examples.dynamic-tracing
+  (:require
+   [lambda-toolshed.papillon :as papillon :refer [execute into-queue]]
+   [clojure.core.async :as async :refer [go <! >! chan]]
+   clojure.pprint))
 
 (def debug true)
 
