@@ -4,7 +4,7 @@
             [clojure.tools.build.api :as b] ; for b/git-process
             [org.corfield.build :as bb]))
 
-(def lib 'net.clojars.lambda-toolshed/papillon)
+(def lib 'lambda-toolshed/papillon)
 
 (def version
   (-> (b/git-process {:git-args "describe --abbrev=4 --dirty"})
