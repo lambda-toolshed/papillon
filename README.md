@@ -20,6 +20,55 @@ We use Clojure(Script) on AWS Lambdas where a number of them are triggered async
 
 A side goal of this is to provide the core of the execution of an interceptor queue, while keeping it open enough that it can be composed with other complimentary libraries without locking the consumer into using specific libraries required for other aspects, such as picking a logging library.
 
+### Goals
+
+#### Clojure Common
+
+As mentioned above, we run ClojureScript on Node runtime for our AWS Lambdas, so we needed a solution that covers both Clojure and ClojureScript.
+
+While we are currently only targeting Clojure and ClojureScript support, as that is what we use in our deployments at work, our goal is to stick to Clojure core a much as possible to help keep the Papillon available across as many of the different Clojure runtimes as possible (e.g. Clojure.NET, ClojurErl, ClojureDart, Babashka, and more would also be welcomed).
+
+#### Interceptor focused
+
+Pedestal interceptors are fantastic, but they are part of Pedestal, and while we could have used Pedestal’s interceptor namespace only, it does have dependencies on logging in Pedestal, and the interceptors in Pedestal are not quite as isolated from the rest of Pedestal as we would have liked.
+
+#### Decouple the interceptors from HTTP requests.
+
+Sieppari was more focused on Interceptors only, but was based on the idea of a Request/Response model.
+
+With our goal to have interceptors be the prevalent pattern in our AWS Lambdas, we needed something that would fit with both the HTTP style of synchronous AWS Lambdas, as well as the asynchronous AWS Lambdas that consume their items from SQS queues, the idea of contorting a SQS message into a HTTP Request/Response was something we wanted to avoid.
+
+#### Minimal
+
+We focused on what seemed to be the core of interceptors which is having an execution chain of interceptors to run, and running a context map through that chain and back out.
+
+We have tried to leave out most everything else, as we found the interceptor chains can easily be modified to include many orthogonal concerns, allowing us to decomplect the interceptor execution from other useful but separate concerns.
+
+One example of something we have left out is logging. While it is useful to log the path through the interceptor chain, and modifications to the execution chain, we didn’t want to pick a logging library that consuming applications would inherit our decision on.
+
+#### Data First
+
+We also found that given the concept of the interceptor chain being just data, we could get logging (and various other concerns, e.g. benchmarking, tracing, etc.), included by manipulating the interceptor chain using interleave with a repeated sequence of a logging specific interceptor.
+
+This ability to treat both the context as data and the control flow as data, allowed us to keep the core flow of domain logic as interceptors, distinct from logging and other developer related concerns, allowing us to highlight the core context.
+
+Given that the control flow is data, and available on the context, it allowed us to play with ideas like setting up support for a Common Lisp style Condition System as seen in the examples folder.
+
+#### Clojure Core Libraries Based
+
+We stuck with core.async and the ReadPort as our asynchronous mechanism. If we are a library, we didn’t want to commit you to a library because you use Papillon. Clojure (JVM) already has various asynchronous constructs that work with ReadPort and we piggy-backed on ReadPort in ClojureScript land to allow you to use JavaScript Promises as a ReadPort.
+
+The Goal was to give you something that would work out of the box with the various tools to do asynchronous programming that Clojure and ClojureScript give you without making you implement yet another protocol to adapt to.
+
+Get more discussion on Interceptors starting again
+We don’t expect that this will become the next big hit and everyone will start using this in their code, but we do hope that by publishing and promoting “Yet Another Interceptor Library”
+
+> Side Note:  I almost did name it yail (Yet Another Interceptor Library), but it didn't feel like it hit 'yet another' level so happy to keep that one available for someone else to use in the hope that the idea of interceptors gets to that point 🤞.
+
+Those of us in our group who were pushing this project forward think interceptors are a valuable and a “well kept secret” of the Clojure ecosystem, and would love to see more usages of them in the community.
+
+We also would love to see some more abuses of interceptors as well, because it helps find the edges of what can(not) and should (not) be done with them.
+
 ## How it works
 
 ### Summary
