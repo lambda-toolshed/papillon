@@ -271,3 +271,22 @@
      (is (not (contains? res :lambda-toolshed.papillon/error)))
      (is (= 1 (:error-invocation-counts res)))
      (is (= 2 (:leave-invocation-counts res))))))
+
+#?(:cljs
+   (def ^:private track-enter-promise-ix
+     {:enter (fn [ctx]
+               (js/Promise.resolve
+                (update-in ctx [(keyword (str (name :enter) "-invocation-counts"))] inc)))}))
+
+(deftest allows-for-promise-return-values
+  #?(:cljs
+     (go-test
+      (let [ixs [track-enter-promise-ix]
+            c (ix/execute invocation-tracking-ctx ixs)
+            [res p] (alts! [c (async/timeout 10)])]
+        (is (= p c))
+        (is (empty? (:lambda-toolshed.papillon/queue res)))
+        (is (empty? (:lambda-toolshed.papillon/stack res)))
+        (is (= 1 (:enter-invocation-counts res)))
+        (is (= 0 (:leave-invocation-counts res)))
+        (is (= 0 (:error-invocation-counts res)))))))
