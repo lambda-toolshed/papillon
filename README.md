@@ -87,7 +87,7 @@ Sometimes things go wrong, and the caterpillar eats something that didn't agree 
 
 ### The Spec
 
-Interceptors are represented as a map with the optional keys of `:enter`, `:leave`, and/or `:exit`.  None of the keys are required to be on an interceptor map, and if no truthy value for the key being checked is found on the interceptor map, the executor will continue its processing skipping over the interceptor for that stage.
+Interceptors are represented as a map with the optional keys of `:enter`, `:leave`, and `:error`.  None of the keys are required to be on an interceptor map, and if no truthy value for the key being checked is found on the interceptor map, the executor will continue its processing skipping over the interceptor for that stage.
 
 The idea of sticking to a map instead of a record is that if the interceptor is a map, consumers can attach any other data to the interceptor, which the executor will ignored instead of actively discarding when converting to a record, allowing the extra keys and values on the interceptor map to be accessible while it exists on the queue or the stack in the context.
 
