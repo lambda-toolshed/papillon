@@ -38,11 +38,11 @@ test-clj: .make.test-clj
 test-cljs: .make.test-cljs
 
 .make.test-clj: deps.edn $(testfiles) $(srcfiles)
-	clojure -T:build test-clj
+	clojure -X:test:project/test-clj
 	touch .make.test-clj
 
 .make.test-cljs: deps.edn $(testfiles) $(srcfiles)
-	clojure -T:build test-cljs
+	clojure -M:test:project/test-cljs
 	touch .make.test-cljs
 
 lint: $(testfiles) $(srcfiles)

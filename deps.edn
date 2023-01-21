@@ -5,18 +5,18 @@
  :aliases {:build {:deps {io.github.seancorfield/build-clj
                           {:git/tag "v0.6.4" :git/sha "c21cfde"}}
                    :ns-default build}
-           :dev {:extra-paths ["dev"]}
+           :dev {:extra-paths ["dev"]
+                 :jvm-opts ["-DENVIRONMENT=development"]}
            :test {:extra-paths ["test"]
-                  :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}}
-                  :jvm-opts ["-DENVIRONMENT=test"]}
-
+                  :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}}}
            :project/test-cljs {:main-opts ["-m" "cljs-test-runner.main"]
                                :extra-deps {olical/cljs-test-runner {:mvn/version "3.8.0"}}
                                :jvm-opts ["-DENVIRONMENT=test"]}
-
-           :project/test-clj {:extra-deps {lambdaisland/kaocha {:mvn/version "1.73.1175"}}
-                              :exec-fn kaocha.runner/exec-fn
-                              :exec-args {}}
+           :project/test-clj {:extra-deps {io.github.cognitect-labs/test-runner
+                                           {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
+                              :main-opts ["-m" "cognitect.test-runner"]
+                              :exec-fn cognitect.test-runner.api/test
+                              :jvm-opts ["-DENVIRONMENT=test"]}
 
            ;; for interactive test running
            :project/watch-test {:extra-deps {lambdaisland/kaocha {:mvn/version "1.60.977"}}
