@@ -60,11 +60,11 @@ install: ci
 deploy: ci
 	clojure -T:build deploy
 
-# clean:
-# 	rm -f $(jar-file) $(pom-file)
-# 	rm -rf target/*
-# 	rm -rf cljs-test-runner-out
-# 	rm -f .make.*
+clean:
+	rm -f $(jar-file) $(pom-file)
+	rm -rf target/*
+	rm -rf cljs-test-runner-out
+	rm -f .make.*
 
 # Copied from: https://github.com/jeffsp/makefile_help/blob/master/Makefile
 # Tab nonesense resolved with help from StackOverflow... need a literal instead of the \t escape on MacOS
