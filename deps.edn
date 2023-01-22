@@ -38,6 +38,11 @@
            :project/format {:extra-deps {cljfmt/cljfmt {:mvn/version "0.8.0"}}
                             :main-opts  ["-m" "cljfmt.main" "fix"]}
 
+           ;; Reference: https://github.com/liquidz/antq
+           ;; Example Usage: clj -M:outdated
+           :outdated {:extra-deps {com.github.liquidz/antq {:mvn/version "RELEASE"}}
+                      :main-opts ["-m" "antq.core" "--skip=github-action"]}
+
            :project/format-check {:extra-deps {cljfmt/cljfmt {:mvn/version "0.8.0"}}
                                   :main-opts  ["-m" "cljfmt.main" "check"]}
 
