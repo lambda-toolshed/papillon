@@ -86,12 +86,12 @@
   context."
   [ctx result-chan]
   (cond
-    (satisfies? ReadPort ctx) (take! ctx #(enter % result-chan))
-    (:lambda-toolshed.papillon/error ctx) (put! result-chan  (clear-queue ctx))
-    (reduced? ctx) (put! result-chan (clear-queue (unreduced ctx)))
+    (satisfies? ReadPort ctx) (go (enter (<! ctx) result-chan))
+    (:lambda-toolshed.papillon/error ctx) (clear-queue ctx)
+    (reduced? ctx) (clear-queue (unreduced ctx))
     :else (let [queue (:lambda-toolshed.papillon/queue ctx)]
             (if (empty? queue)
-              (put! result-chan ctx)
+              ctx
               (let [ix (peek queue)
                     new-queue (pop queue)
                     new-stack (conj (:lambda-toolshed.papillon/stack ctx) ix)]
@@ -114,16 +114,16 @@
 
   If the function under the `:enter` key 'opened' a resource, you will
   want to ensure it is closed in both the `:lambda-toolshed.papillon/error` and `:leave` case, as either path may be taken on the way back up the interceptor chain."
-  [in result-chan]
-  (if (satisfies? ReadPort in)
-    (take! in #(leave % result-chan))
-    (let [stack (:lambda-toolshed.papillon/stack in)]
+  [ctx result-chan]
+  (if (satisfies? ReadPort ctx)
+    (go (leave (<! ctx) result-chan))
+    (let [stack (:lambda-toolshed.papillon/stack ctx)]
       (if (empty? stack)
-        (put! result-chan in)
+        ctx
         (let [ix (peek stack)
               new-stack (pop stack)
-              stage (if (:lambda-toolshed.papillon/error in) :error :leave)]
-          (recur (-> in
+              stage (if (:lambda-toolshed.papillon/error ctx) :error :leave)]
+          (recur (-> ctx
                      (assoc :lambda-toolshed.papillon/stack new-stack)
                      (try-stage ix stage))
                  result-chan))))))
@@ -136,13 +136,20 @@
   (assoc (enqueue ctx ixs)
          :lambda-toolshed.papillon/stack []))
 
-(defn- await-result
-  "'Unwinds' any nested channels and returns the context"
+(defn- present-sync
+  [result]
+  (if-let [error (:lambda-toolshed.papillon/error result)]
+    (throw error)
+    result))
+
+(defn- present-async
   [res]
   (go-loop [ctx res]
     (if (satisfies? ReadPort ctx)
       (recur (<! ctx))
-      ctx)))
+      (if-let [error (:lambda-toolshed.papillon/error ctx)]
+        error
+        ctx))))
 
 (defn execute
   "Executes the interceptor call chain as a queue.
@@ -161,13 +168,27 @@
   context is provided an empty map is used.  Note: The behavior of
   starting with an initial context that contains the key
   `:lambda-toolshed.papillon/error` is left unspecified and may be subject to
-  change."
+  change.
+
+  Executing the interceptor chain can complete synchronously or asynchronously.
+  If any interceptor function (enter, leave or error) completes asynchronously,
+  then chain execution will complete asynchronously, otherwise the chain execution
+  will complete synchronously.
+
+  The result of executing the chain is either:
+
+  1. (async) a channel whose sole value is the chain execution result or an
+     exception (when not handled by the chain).
+  2. (sync) the chain execution result, or a thrown exception (when not handled
+     by the chain)."
   ([ixs]
    (execute {} ixs))
+  ;; TODO: swap order of these parameters to allow efficient partial execution.
   ([ctx ixs]
    (let [ctx (init-ctx ctx ixs)
          enter-res (chan 1)
-         leave-res (chan 1)]
-     (enter ctx enter-res)
-     (leave enter-res leave-res)
-     (await-result leave-res))))
+         leave-res (chan 1)
+         result (leave (enter ctx enter-res) leave-res)]
+     (if (satisfies? ReadPort result)
+       (present-async result)
+       (present-sync result)))))
