@@ -85,9 +85,9 @@
   channel was returned, it doesn't halt if that channel is another
   channel, but continues until it gets a non-ReadPort value for the
   context."
-  [ctx result-chan]
+  [ctx]
   (cond
-    (satisfies? ReadPort ctx) (go (enter (<! ctx) result-chan))
+    (satisfies? ReadPort ctx) (go (enter (<! ctx)))
     (:lambda-toolshed.papillon/error ctx) (clear-queue ctx)
     (reduced? ctx) (clear-queue (unreduced ctx))
     :else (let [queue (:lambda-toolshed.papillon/queue ctx)]
@@ -99,7 +99,7 @@
                 (recur (-> ctx
                            (assoc :lambda-toolshed.papillon/queue new-queue
                                   :lambda-toolshed.papillon/stack new-stack)
-                           (try-stage ix :enter)) result-chan))))))
+                           (try-stage ix :enter))))))))
 
 (defn- leave
   "Runs the leave and error chain.  `leave` will run the `:lambda-toolshed.papillon/error`
@@ -115,9 +115,9 @@
 
   If the function under the `:enter` key 'opened' a resource, you will
   want to ensure it is closed in both the `:lambda-toolshed.papillon/error` and `:leave` case, as either path may be taken on the way back up the interceptor chain."
-  [ctx result-chan]
+  [ctx]
   (if (satisfies? ReadPort ctx)
-    (go (leave (<! ctx) result-chan))
+    (go (leave (<! ctx)))
     (let [stack (:lambda-toolshed.papillon/stack ctx)]
       (if (empty? stack)
         ctx
@@ -126,8 +126,8 @@
               stage (if (:lambda-toolshed.papillon/error ctx) :error :leave)]
           (recur (-> ctx
                      (assoc :lambda-toolshed.papillon/stack new-stack)
-                     (try-stage ix stage))
-                 result-chan))))))
+                     (try-stage ix stage))))))))
+
 (defn- init-ctx
   "Sets up the context with the queue key and the stack key.
 
@@ -187,9 +187,7 @@
   ;; TODO: swap order of these parameters to allow efficient partial execution.
   ([ctx ixs]
    (let [ctx (init-ctx ctx ixs)
-         enter-res (chan 1)
-         leave-res (chan 1)
-         result (leave (enter ctx enter-res) leave-res)]
+         result (leave (enter ctx))]
      (if (satisfies? ReadPort result)
        (present-async result)
        (present-sync result)))))
