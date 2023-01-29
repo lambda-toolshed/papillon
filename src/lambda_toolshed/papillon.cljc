@@ -40,9 +40,10 @@
   [ctx res]
   (go
     (let [x (<! res)]
-      (if (error? x)
-        (assoc ctx :lambda-toolshed.papillon/error x)
-        x))))
+      (cond
+        (nil? x) (assoc ctx :lambda-toolshed.papillon/error (ex-info "Context channel was closed." {::ctx ctx}))
+        (error? x) (assoc ctx :lambda-toolshed.papillon/error x)
+        :else x))))
 
 (defn- try-stage
   "Try to invoke a stage on an interceptor with a context.

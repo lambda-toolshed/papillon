@@ -176,6 +176,19 @@
      (is (= the-exception (::error res)))
      (is (nil? (:calls res))))))
 
+(deftest async-lost-context-triggers-exception
+  (go-test
+   (let [the-exception (ex-info "the exception" {})
+         ixs [(merge track-leave-ix track-error-ix)
+              capture-ix
+              {:enter (constantly (doto (async/chan)
+                                    async/close!))}]
+         [res _] (alts! [(ix/execute {} ixs)
+                         (async/timeout 10)])]
+     (is (map? res))
+     (is (= "Context channel was closed." (ex-message (res ::error))))
+     (is (= {:leave 1} (:calls res))))))
+
 (deftest leave-chain-is-resumed-when-error-processor-removes-error-key
   (let [the-exception (ex-info "the exception" {})
         ixs [(merge track-leave-ix track-error-ix)
