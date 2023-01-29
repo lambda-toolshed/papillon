@@ -57,7 +57,7 @@
     (try
       (let [res (f ctx)]
         (if (satisfies? ReadPort res)
-          (go (<! (async-catch ctx res)))
+          (async-catch ctx res)
           res))
       (catch #?(:clj Throwable :cljs :default) err
         (assoc ctx :lambda-toolshed.papillon/error err)))
