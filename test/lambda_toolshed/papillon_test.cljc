@@ -7,9 +7,9 @@
 
 (def ^:private capture-ix
   {:name :capture
-   :error (fn [{error :lambda-toolshed.papillon/error :as ctx}]
+   :error (fn [{error ::ix/error :as ctx}]
             (-> ctx
-                (dissoc :lambda-toolshed.papillon/error)
+                (dissoc ::ix/error)
                 (assoc ::error error)))})
 
 (defn ->async
@@ -26,25 +26,25 @@
   (testing "enqueues interceptors to an empty context"
     (let [ixs [{:enter identity}]
           ctx (ix/enqueue {} ixs)]
-      (is (:lambda-toolshed.papillon/queue ctx))
-      (is (= (:lambda-toolshed.papillon/queue ctx) ixs))))
+      (is (::ix/queue ctx))
+      (is (= (::ix/queue ctx) ixs))))
   (testing "enqueues interceptors to existing interceptors"
     (let [ixs [{} {} {}]
           ixs2 [{}]
           ctx (ix/enqueue (ix/enqueue {} ixs) ixs2)]
-      (is (:lambda-toolshed.papillon/queue ctx))
-      (is (= (:lambda-toolshed.papillon/queue ctx) (apply conj ixs ixs2))))))
+      (is (::ix/queue ctx))
+      (is (= (::ix/queue ctx) (apply conj ixs ixs2))))))
 
 (deftest clear-queue
   (testing "removes the queue key from the context"
     (let [ixs [{:enter identity}]
           ctx (ix/clear-queue (ix/enqueue {} ixs))]
-      (is (not (contains? ctx :lambda-toolshed.papillon/queue))))))
+      (is (not (contains? ctx ::ix/queue))))))
 
 (deftest allows-for-empty-chain-of-interceptors
-  (is (= {:lambda-toolshed.papillon/queue #?(:clj clojure.lang.PersistentQueue/EMPTY
-                                             :cljs cljs.core/PersistentQueue.EMPTY)
-          :lambda-toolshed.papillon/stack []}
+  (is (= {::ix/queue #?(:clj clojure.lang.PersistentQueue/EMPTY
+                        :cljs cljs.core/PersistentQueue.EMPTY)
+          ::ix/stack []}
          (ix/execute {} []))))
 
 (deftest allows-for-interceptor-chain-of-only-enters
@@ -52,41 +52,41 @@
         expected-log [[:ix :enter] [:ix :leave]]
         res (ix/execute {} ixs)]
     (let [res (ix/execute {::ix/trace []} ixs)]
-      (is (empty? (:lambda-toolshed.papillon/queue res)))
-      (is (empty? (:lambda-toolshed.papillon/stack res)))
-      (is (= expected-log (:lambda-toolshed.papillon/trace res))))
+      (is (empty? (::ix/queue res)))
+      (is (empty? (::ix/stack res)))
+      (is (= expected-log (::ix/trace res))))
     (go-test
      (let [ixs (mapv ->async ixs)
            [res _] (async/alts! [(ix/execute {::ix/trace []} ixs)
                                  (async/timeout 10)])]
        (is (map? res))
-       (is (empty? (:lambda-toolshed.papillon/queue res)))
-       (is (empty? (:lambda-toolshed.papillon/stack res)))
-       (is (= expected-log (:lambda-toolshed.papillon/trace res)))))))
+       (is (empty? (::ix/queue res)))
+       (is (empty? (::ix/stack res)))
+       (is (= expected-log (::ix/trace res)))))))
 
 (deftest allows-for-interceptor-chain-of-only-leaves
   (let [ixs [{:name :ix :leave identity}]
         expected-log [[:ix :enter] [:ix :leave]]]
     (let [res (ix/execute {::ix/trace []} ixs)]
-      (is (empty? (:lambda-toolshed.papillon/queue res)))
-      (is (empty? (:lambda-toolshed.papillon/stack res)))
-      (is (= expected-log (:lambda-toolshed.papillon/trace res))))
+      (is (empty? (::ix/queue res)))
+      (is (empty? (::ix/stack res)))
+      (is (= expected-log (::ix/trace res))))
     (go-test
      (let [ixs (mapv ->async ixs)
            [res _] (async/alts! [(ix/execute {::ix/trace []} ixs)
                                  (async/timeout 10)])]
        (is (map? res))
-       (is (empty? (:lambda-toolshed.papillon/queue res)))
-       (is (empty? (:lambda-toolshed.papillon/stack res)))
-       (is (= expected-log (:lambda-toolshed.papillon/trace res)))))))
+       (is (empty? (::ix/queue res)))
+       (is (empty? (::ix/stack res)))
+       (is (= expected-log (::ix/trace res)))))))
 
 (deftest allows-for-interceptor-chain-of-only-errors
   (let [ixs [{:name :ix :error identity}]
         expected-log [[:ix :enter] [:ix :leave]]
         res (ix/execute {::ix/trace []} ixs)]
-    (is (empty? (:lambda-toolshed.papillon/queue res)))
-    (is (empty? (:lambda-toolshed.papillon/stack res)))
-    (is (= expected-log (:lambda-toolshed.papillon/trace res))))
+    (is (empty? (::ix/queue res)))
+    (is (empty? (::ix/stack res)))
+    (is (= expected-log (::ix/trace res))))
   (go-test
    "Nothing to be done; chain can't start async processing with only error fns"))
 
@@ -95,16 +95,16 @@
         expected-log [[:ix :enter] [:ix :leave]]]
     (let [res (ix/execute {::ix/trace []} ixs)]
       (is (map? res))
-      (is (empty? (:lambda-toolshed.papillon/queue res)))
-      (is (empty? (:lambda-toolshed.papillon/stack res)))
-      (is (= expected-log (:lambda-toolshed.papillon/trace res))))
+      (is (empty? (::ix/queue res)))
+      (is (empty? (::ix/stack res)))
+      (is (= expected-log (::ix/trace res))))
     (go-test
      (let [ixs (mapv ->async ixs)
            [res _] (async/alts! [(ix/execute {::ix/trace []} ixs)
                                  (async/timeout 10)])]
        (is (map? res))
-       (is (empty? (:lambda-toolshed.papillon/queue res)))
-       (is (empty? (:lambda-toolshed.papillon/stack res)))
+       (is (empty? (::ix/queue res)))
+       (is (empty? (::ix/stack res)))
        (is (= expected-log (::ix/trace res)))))))
 
 (deftest exception-semantics-are-preserved
@@ -189,14 +189,14 @@
 	              [:capture :error]
 	              [:ix :leave]]]
     (let [res (ix/execute {::ix/trace []} ixs)]
-      (is (not (contains? res :lambda-toolshed.papillon/error)))
+      (is (not (contains? res ::ix/error)))
       (is (= expected-log (::ix/trace res))))
     (go-test
      (let [ixs (update ixs 0 ->async)
            [res _] (alts! [(ix/execute {::ix/trace []} ixs)
                            (async/timeout 10)])]
        (is (map? res))
-       (is (not (contains? res :lambda-toolshed.papillon/error)))
+       (is (not (contains? res ::ix/error)))
        (is (= expected-log (::ix/trace res)))))))
 
 (deftest reduced-context-stops-enter-chain-processing
@@ -221,6 +221,6 @@
         (let [[res _] (alts! [(ix/execute {::ix/trace []} ixs)
                               (async/timeout 10)])]
           (is (map? res))
-          (is (empty? (:lambda-toolshed.papillon/queue res)))
-          (is (empty? (:lambda-toolshed.papillon/stack res)))
+          (is (empty? (::ix/queue res)))
+          (is (empty? (::ix/stack res)))
           (is (= expected-log (::ix/trace res))))))))

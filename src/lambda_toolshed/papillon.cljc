@@ -15,7 +15,7 @@
 
 (defn enqueue
   [ctx ixs]
-  (update-in ctx [:lambda-toolshed.papillon/queue] into-queue ixs))
+  (update-in ctx [::queue] into-queue ixs))
 
 (defn- error?
   "Check if this is an exception."
@@ -32,8 +32,8 @@
   (go
     (let [x (<! res)]
       (cond
-        (nil? x) (assoc ctx :lambda-toolshed.papillon/error (ex-info "Context channel was closed." {::ctx ctx}))
-        (error? x) (assoc ctx :lambda-toolshed.papillon/error x)
+        (nil? x) (assoc ctx ::error (ex-info "Context channel was closed." {::ctx ctx}))
+        (error? x) (assoc ctx ::error x)
         :else x))))
 
 (defn- try-stage
@@ -55,7 +55,7 @@
             (async-catch ctx res)
             res))
         (catch #?(:clj Throwable :cljs :default) err
-          (assoc ctx :lambda-toolshed.papillon/error err)))
+          (assoc ctx ::error err)))
       ctx)))
 
 (defn clear-queue
@@ -63,7 +63,7 @@
   processed.  Primarily used so one doesn't have to worry about
   namespaced keywords."
   [ctx]
-  (dissoc ctx :lambda-toolshed.papillon/queue))
+  (dissoc ctx ::queue))
 
 (defn- enter
   "Runs the enter chain.  If the key :lambda-toolshed.papillon/error is present in the context
@@ -82,17 +82,17 @@
   [ctx]
   (cond
     (satisfies? ReadPort ctx) (go (enter (<! ctx)))
-    (:lambda-toolshed.papillon/error ctx) (clear-queue ctx)
+    (::error ctx) (clear-queue ctx)
     (reduced? ctx) (clear-queue (unreduced ctx))
-    :else (let [queue (:lambda-toolshed.papillon/queue ctx)]
+    :else (let [queue (::queue ctx)]
             (if (empty? queue)
               ctx
               (let [ix (peek queue)
                     new-queue (pop queue)
-                    new-stack (conj (:lambda-toolshed.papillon/stack ctx) ix)]
+                    new-stack (conj (::stack ctx) ix)]
                 (recur (-> ctx
-                           (assoc :lambda-toolshed.papillon/queue new-queue
-                                  :lambda-toolshed.papillon/stack new-stack)
+                           (assoc ::queue new-queue
+                                  ::stack new-stack)
                            (try-stage ix :enter))))))))
 
 (defn- leave
@@ -112,14 +112,14 @@
   [ctx]
   (if (satisfies? ReadPort ctx)
     (go (leave (<! ctx)))
-    (let [stack (:lambda-toolshed.papillon/stack ctx)]
+    (let [stack (::stack ctx)]
       (if (empty? stack)
         ctx
         (let [ix (peek stack)
               new-stack (pop stack)
-              stage (if (:lambda-toolshed.papillon/error ctx) :error :leave)]
+              stage (if (::error ctx) :error :leave)]
           (recur (-> ctx
-                     (assoc :lambda-toolshed.papillon/stack new-stack)
+                     (assoc ::stack new-stack)
                      (try-stage ix stage))))))))
 
 (defn- init-ctx
@@ -129,11 +129,11 @@
   is what is used to trace backwards through the interceptor stack"
   [ctx ixs]
   (assoc (enqueue ctx ixs)
-         :lambda-toolshed.papillon/stack []))
+         ::stack []))
 
 (defn- present-sync
   [result]
-  (if-let [error (:lambda-toolshed.papillon/error result)]
+  (if-let [error (::error result)]
     (throw error)
     result))
 
@@ -142,7 +142,7 @@
   (go-loop [ctx res]
     (if (satisfies? ReadPort ctx)
       (recur (<! ctx))
-      (if-let [error (:lambda-toolshed.papillon/error ctx)]
+      (if-let [error (::error ctx)]
         error
         ctx))))
 
