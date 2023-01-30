@@ -45,19 +45,19 @@
   (is (= {::ix/queue #?(:clj clojure.lang.PersistentQueue/EMPTY
                         :cljs cljs.core/PersistentQueue.EMPTY)
           ::ix/stack []}
-         (ix/execute {} []))))
+         (ix/execute [] {}))))
 
 (deftest allows-for-interceptor-chain-of-only-enters
   (let [ixs [{:name :ix :enter identity}]
         expected-log [[:ix :enter] [:ix :leave]]
-        res (ix/execute {} ixs)]
-    (let [res (ix/execute {::ix/trace []} ixs)]
+        res (ix/execute ixs {})]
+    (let [res (ix/execute ixs {::ix/trace []})]
       (is (empty? (::ix/queue res)))
       (is (empty? (::ix/stack res)))
       (is (= expected-log (::ix/trace res))))
     (go-test
      (let [ixs (mapv ->async ixs)
-           [res _] (async/alts! [(ix/execute {::ix/trace []} ixs)
+           [res _] (async/alts! [(ix/execute ixs {::ix/trace []})
                                  (async/timeout 10)])]
        (is (map? res))
        (is (empty? (::ix/queue res)))
@@ -67,13 +67,13 @@
 (deftest allows-for-interceptor-chain-of-only-leaves
   (let [ixs [{:name :ix :leave identity}]
         expected-log [[:ix :enter] [:ix :leave]]]
-    (let [res (ix/execute {::ix/trace []} ixs)]
+    (let [res (ix/execute ixs {::ix/trace []})]
       (is (empty? (::ix/queue res)))
       (is (empty? (::ix/stack res)))
       (is (= expected-log (::ix/trace res))))
     (go-test
      (let [ixs (mapv ->async ixs)
-           [res _] (async/alts! [(ix/execute {::ix/trace []} ixs)
+           [res _] (async/alts! [(ix/execute ixs {::ix/trace []})
                                  (async/timeout 10)])]
        (is (map? res))
        (is (empty? (::ix/queue res)))
@@ -83,7 +83,7 @@
 (deftest allows-for-interceptor-chain-of-only-errors
   (let [ixs [{:name :ix :error identity}]
         expected-log [[:ix :enter] [:ix :leave]]
-        res (ix/execute {::ix/trace []} ixs)]
+        res (ix/execute ixs {::ix/trace []})]
     (is (empty? (::ix/queue res)))
     (is (empty? (::ix/stack res)))
     (is (= expected-log (::ix/trace res))))
@@ -93,14 +93,14 @@
 (deftest error-stage-is-never-invoked-if-no-error-has-been-thrown
   (let [ixs [{:name :ix :enter identity :leave identity :error identity}]
         expected-log [[:ix :enter] [:ix :leave]]]
-    (let [res (ix/execute {::ix/trace []} ixs)]
+    (let [res (ix/execute ixs {::ix/trace []})]
       (is (map? res))
       (is (empty? (::ix/queue res)))
       (is (empty? (::ix/stack res)))
       (is (= expected-log (::ix/trace res))))
     (go-test
      (let [ixs (mapv ->async ixs)
-           [res _] (async/alts! [(ix/execute {::ix/trace []} ixs)
+           [res _] (async/alts! [(ix/execute ixs {::ix/trace []})
                                  (async/timeout 10)])]
        (is (map? res))
        (is (empty? (::ix/queue res)))
@@ -113,11 +113,11 @@
     (is (thrown-with-msg?
          #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo)
          #"the exception"
-         (ix/execute {} ixs)))
+         (ix/execute ixs {})))
     (go-test
      (let [ixs (concat [(->async {:enter identity})] ; transition to async
                        ixs)
-           [res _] (async/alts! [(ix/execute {} ixs)
+           [res _] (async/alts! [(ix/execute ixs {})
                                  (async/timeout 10)])]
        (is (= the-exception res))))))
 
@@ -129,13 +129,13 @@
 	              [:thrower :enter]
 	              [:thrower :error]
 	              [:capture :error]]]
-    (let [res (ix/execute {::ix/trace []} ixs)]
+    (let [res (ix/execute ixs {::ix/trace []})]
       (is (= the-exception (::error res)))
       (is (= expected-log (::ix/trace res))))
     (go-test
      (let [ixs (concat [async-ix] ixs)
            expected-log (concat [[:->async :enter]] expected-log [[:->async :leave]])
-           [res _] (alts! [(ix/execute {::ix/trace []} ixs)
+           [res _] (alts! [(ix/execute ixs {::ix/trace []})
                            (async/timeout 10)])]
        (is (map? res))
        (is (= the-exception (::error res)))
@@ -149,13 +149,13 @@
 	              [:thrower :enter]
 	              [:thrower :leave]
 	              [:capture :error]]]
-    (let [res (ix/execute {::ix/trace []} ixs)]
+    (let [res (ix/execute ixs {::ix/trace []})]
       (is (= the-exception (::error res)))
       (is (= expected-log (::ix/trace res))))
     (go-test
      (let [ixs (concat [async-ix] ixs)
            expected-log (concat [[:->async :enter]] expected-log [[:->async :leave]])
-           [res _] (alts! [(ix/execute {::ix/trace []} ixs)
+           [res _] (alts! [(ix/execute ixs {::ix/trace []})
                            (async/timeout 10)])]
        (is (map? res))
        (is (= the-exception (::error res)))
@@ -171,7 +171,7 @@
                        [:loser :enter]
                        [:loser :error]
                        [:capture :error]]
-         [res _] (alts! [(ix/execute {::ix/trace []} ixs)
+         [res _] (alts! [(ix/execute ixs {::ix/trace []})
                          (async/timeout 10)])]
      (is (map? res))
      (is (= "Context channel was closed." (ex-message (res ::error))))
@@ -188,12 +188,12 @@
 	              [:thrower :leave]
 	              [:capture :error]
 	              [:ix :leave]]]
-    (let [res (ix/execute {::ix/trace []} ixs)]
+    (let [res (ix/execute ixs {::ix/trace []})]
       (is (not (contains? res ::ix/error)))
       (is (= expected-log (::ix/trace res))))
     (go-test
      (let [ixs (update ixs 0 ->async)
-           [res _] (alts! [(ix/execute {::ix/trace []} ixs)
+           [res _] (alts! [(ix/execute ixs {::ix/trace []})
                            (async/timeout 10)])]
        (is (map? res))
        (is (not (contains? res ::ix/error)))
@@ -203,11 +203,11 @@
   (let [ixs [{:name :reducer :enter reduced}
              {:name :ix}]
         expected-log [[:reducer :enter] [:reducer :leave]]]
-    (let [res (ix/execute {::ix/trace []} ixs)]
+    (let [res (ix/execute ixs {::ix/trace []})]
       (is (= expected-log (::ix/trace res))))
     (go-test
      (let [ixs (update ixs 0 ->async)
-           [res _] (alts! [(ix/execute {::ix/trace []} ixs)
+           [res _] (alts! [(ix/execute ixs {::ix/trace []})
                            (async/timeout 10)])]
        (is (map? res))
        (is (= expected-log (::ix/trace res)))))))
@@ -218,7 +218,7 @@
                 {:name :promiser :enter (fn [x] (js/Promise.resolve x))}]
            expected-log [[:ix :enter] [:promiser :enter] [:promiser :leave] [:ix :leave]]]
        (go-test
-        (let [[res _] (alts! [(ix/execute {::ix/trace []} ixs)
+        (let [[res _] (alts! [(ix/execute ixs {::ix/trace []})
                               (async/timeout 10)])]
           (is (map? res))
           (is (empty? (::ix/queue res)))

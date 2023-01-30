@@ -174,8 +174,7 @@
      by the chain)."
   ([ixs]
    (execute {} ixs))
-  ;; TODO: swap order of these parameters to allow efficient partial execution.
-  ([ctx ixs]
+  ([ixs ctx]
    (let [ixs (map-indexed namer ixs)
          ctx (init-ctx ctx ixs)
          result (leave (enter ctx))]
