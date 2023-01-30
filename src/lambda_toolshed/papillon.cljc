@@ -2,18 +2,9 @@
   (:require
    [clojure.core.async :refer [<! go go-loop take! put! chan]]
    [clojure.core.async.impl.protocols :refer [ReadPort]]
-   [lambda-toolshed.papillon.async]))
-
-;;;; TODO: Official Support Interceptor names...
-;;;;   format-context to show names?
-;;;;   tracing with adding a name and stage call???
-;;;;     - remove by name ?
-;;;;     - insert before ?
-;;;;     - insert after ?
-
-;;;; TODO: Support logging/tracing?
-;;;;   interceptor log protocol??
-;;;;   support adding :before-stage and :after-stage callback as part of context?
+   [lambda-toolshed.papillon.async]
+   #?@(:cljs ([goog.string :as gstring]
+              goog.string.format))))
 
 (defn into-queue
   ([xs]
@@ -53,16 +44,19 @@
 
    This also catches any errors that are raised (from synchronous calls)
    and adds the error to the original context under the key `:lambda-toolshed.papillon/error`."
-  [ctx ix stage]
-  (if-let [f (stage ix)]
-    (try
-      (let [res (f ctx)]
-        (if (satisfies? ReadPort res)
-          (async-catch ctx res)
-          res))
-      (catch #?(:clj Throwable :cljs :default) err
-        (assoc ctx :lambda-toolshed.papillon/error err)))
-    ctx))
+  [{trace ::trace :as ctx} ix stage]
+  (let [ctx (if trace
+              (update ctx ::trace conj [(or (:name ix) (-> ix meta :name)) stage])
+              ctx)]
+    (if-let [f (stage ix)]
+      (try
+        (let [res (f ctx)]
+          (if (satisfies? ReadPort res)
+            (async-catch ctx res)
+            res))
+        (catch #?(:clj Throwable :cljs :default) err
+          (assoc ctx :lambda-toolshed.papillon/error err)))
+      ctx)))
 
 (defn clear-queue
   "Clear out the queue so that no further items in the enter chain are
@@ -152,6 +146,12 @@
         error
         ctx))))
 
+(defn- namer [i ix]
+  (if (:name ix)
+    ix
+    (let [fmt #?(:clj format :cljs gstring/format)]
+      (vary-meta ix update :name (fnil identity (fmt "itx%02d" i))))))
+
 (defn execute
   "Executes the interceptor call chain as a queue.
 
@@ -186,7 +186,8 @@
    (execute {} ixs))
   ;; TODO: swap order of these parameters to allow efficient partial execution.
   ([ctx ixs]
-   (let [ctx (init-ctx ctx ixs)
+   (let [ixs (map-indexed namer ixs)
+         ctx (init-ctx ctx ixs)
          result (leave (enter ctx))]
      (if (satisfies? ReadPort result)
        (present-async result)
