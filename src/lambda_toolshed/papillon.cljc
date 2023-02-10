@@ -84,15 +84,12 @@
     (::error ctx) (clear-queue ctx)
     (reduced? ctx) (clear-queue (unreduced ctx))
     :else (let [queue (::queue ctx)]
-            (if (empty? queue)
-              ctx
-              (let [ix (peek queue)
-                    new-queue (pop queue)
-                    new-stack (conj (::stack ctx) ix)]
-                (recur (-> ctx
-                           (assoc ::queue new-queue
-                                  ::stack new-stack)
-                           (try-stage ix :enter))))))))
+            (if-let [ix (peek queue)]
+              (recur (-> ctx
+                         (update ::queue pop)
+                         (update ::stack conj ix)
+                         (try-stage ix :enter)))
+              ctx))))
 
 (defn- leave
   "Runs the stacked `:leave` chain or `:error` chain in the given context `ctx`.
@@ -106,14 +103,11 @@
   (if (satisfies? ReadPort ctx)
     (go (leave (<! ctx)))
     (let [stack (::stack ctx)]
-      (if (empty? stack)
-        ctx
-        (let [ix (peek stack)
-              new-stack (pop stack)
-              stage (if (::error ctx) :error :leave)]
-          (recur (-> ctx
-                     (assoc ::stack new-stack)
-                     (try-stage ix stage))))))))
+      (if-let [ix (peek stack)]
+        (recur (-> ctx
+                   (update ::stack pop)
+                   (try-stage ix (if (::error ctx) :error :leave))))
+        ctx))))
 
 (defn- init-ctx
   "Inialize the given context `ctx` with the necessary data structures to
