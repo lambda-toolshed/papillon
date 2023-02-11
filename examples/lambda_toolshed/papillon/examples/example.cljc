@@ -4,7 +4,7 @@
    [clojure.core.async :as async :refer [go <! >! chan]]
    clojure.pprint))
 
-;; Synchronous interceptor with that only handles items
+;; Synchronous interceptor that only handles items
 ;; on enter, and adds a new key to the context
 (def one-ix
   {:name :one-ix
@@ -396,3 +396,16 @@
                                 ensure-even-with-tracing-ix])
                    {:number 2})]
     (clojure.pprint/pprint (<! c))))
+
+;; It can be tricky trying to handle both sync *and* async behavior from chain execution.  If you
+;; are using *any* async interceptor fns it can be useful to force async returns and homogenize
+;; the return semantics.
+(let [force-async-itx {:leave (fn [ctx] (go ctx))
+                       :error (fn [ctx] (go ctx))}
+      maybe-async {:enter (fn [ctx] (if (even? (:number ctx)) (go ctx) ctx))}]
+  (go (let [c (execute [force-async-itx maybe-async double-number-ix]
+                       {:number 1})]
+        (clojure.pprint/pprint (<! c))))
+  (go (let [c (execute [force-async-itx double-number-ix maybe-async]
+                       {:number 2})]
+        (clojure.pprint/pprint (<! c)))))
