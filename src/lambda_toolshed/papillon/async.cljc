@@ -1,16 +1,13 @@
-(ns lambda-toolshed.papillon.async
-  #?(:cljs
-     (:require [clojure.core.async :as core.async]
-               [clojure.core.async.impl.protocols :refer [ReadPort]]
-               [cljs.core.async.interop :as core.async.interop :refer [p->c]])))
+(ns lambda-toolshed.papillon.async)
+
+(defprotocol Chrysalis
+  (eclose [this handler]))
 
 #?(:cljs
    (do
      (extend-type js/Promise
-       ReadPort
-       (take! [this handler]
-         (->
-          this
-          p->c
-          (#(core.async/take 1 %))
-          (clojure.core.async.impl.protocols/take! handler))))))
+       Chrysalis
+       (eclose [this handler]
+         (-> this
+             (.catch (fn [err] err))
+             (.then handler))))))

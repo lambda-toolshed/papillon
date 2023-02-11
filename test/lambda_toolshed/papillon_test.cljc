@@ -3,6 +3,7 @@
    [clojure.core.async :as async :refer [alts! go]]
    [clojure.test :refer [deftest is testing]]
    [lambda-toolshed.papillon :as ix]
+   [lambda-toolshed.papillon.async.core_async]
    [lambda-toolshed.test-utils :refer [go-test runt! runt-fn!] :include-macros true]))
 
 (def ^:private capture-ix
@@ -219,6 +220,21 @@
        (is (= the-exception (::error res)))
        (is (= expected-log (::ix/trace res)))))))
 
+(deftest async-lost-context-triggers-exception
+  (go-test
+   (let [ixs [capture-ix {:name :loser
+                          :enter (constantly (doto (async/chan)
+                                               async/close!))}]
+         expected-log [[:capture :enter]
+                       [:loser :enter]
+                       [:loser :error]
+                       [:capture :error]]
+         [res _] (alts! [(ix/execute ixs {::ix/trace []})
+                         (async/timeout 10)])]
+     (is (map? res))
+     (is (= "Context was lost!" (ex-message (res ::error))))
+     (is (= expected-log (::ix/trace res))))))
+
 (deftest leave-chain-is-resumed-when-error-processor-removes-error-key
   (let [the-exception (ex-info "the exception" {})
         ixs [{:name :ix :enter identity}
@@ -255,7 +271,7 @@
        (is (= expected-log (::ix/trace res)))))))
 
 #?(:cljs
-   (deftest allows-for-promise-return-values
+   (deftest allows-for-promise-success-return-values
      (let [ixs [{:name :ix}
                 {:name :promiser :enter (fn [x] (js/Promise.resolve x))}]
            expected-log [[:ix :enter] [:promiser :enter] [:promiser :leave] [:ix :leave]]]
@@ -265,4 +281,25 @@
           (is (map? res))
           (is (empty? (::ix/queue res)))
           (is (empty? (::ix/stack res)))
+          (is (= expected-log (::ix/trace res))))))))
+
+#?(:cljs
+   (deftest allows-for-promise-rejection-return-values
+     (let [the-exception (ex-info "the exception" {})
+           ixs [{:name :ix}
+                capture-ix
+                {:name :promise-rejector :enter (fn [_] (js/Promise.reject the-exception))}]
+           expected-log [[:ix :enter]
+                         [:capture :enter]
+                         [:promise-rejector :enter]
+                         [:promise-rejector :error]
+                         [:capture :error]
+                         [:ix :leave]]]
+       (go-test
+        (let [[res _] (alts! [(ix/execute ixs {::ix/trace []})
+                              (async/timeout 10)])]
+          (is (map? res))
+          (is (empty? (::ix/queue res)))
+          (is (empty? (::ix/stack res)))
+          (is (= (ex-message the-exception) (ex-message (res ::error))))
           (is (= expected-log (::ix/trace res))))))))

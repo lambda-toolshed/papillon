@@ -1,6 +1,7 @@
 (ns lambda-toolshed.papillon.examples.example
   (:require
    [lambda-toolshed.papillon :as papillon :refer [enqueue execute]]
+   [lambda-toolshed.papillon.async.core-async]
    [clojure.core.async :as async :refer [go <! >! chan]]
    clojure.pprint))
 
@@ -23,7 +24,7 @@
    :enter (fn [ctx]
             (update ctx :number #(* % 2)))})
 
-;; Run an interceptor chain with one interceptor in it that is synchronous
+;; Run an interceptor chain with two interceptor in it that is synchronous
 ;; and does not take an initial context to augment
 (let [c (execute [one-ix
                   double-number-ix])]
