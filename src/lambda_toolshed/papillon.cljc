@@ -167,7 +167,7 @@
   2. (sync) the chain execution result, or a thrown exception (when not handled
      by the chain)."
   ([ixs]
-   (execute {} ixs))
+   (execute ixs {}))
   ([ixs ctx]
    (let [ixs (map-indexed namer ixs)
          ctx (init-ctx ctx ixs)
