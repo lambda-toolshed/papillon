@@ -36,7 +36,7 @@
     (loop [[ix & ix-stack] stack
            [sig & sigs] signal-hierarchy]
       (if sig
-        (if ix ; do we have an interceptor? or did we exhaust the stack?  
+        (if ix ; do we have an interceptor? or did we exhaust the stack?
           ;; yes we have an interceptor to check
           (if-let [f (sig ix)] ; can this interceptor handle the signal
             (apply f (concat [c-out ctx] args)) ; yes? invoke it
@@ -198,7 +198,7 @@
                               :example.ditributed-transactions/send-sqs-message!])
                 (assoc :example.ditributed-transactions/transaction-record transaction-record
                        :example.ditributed-transactions/transaction-id id))]
-    (papillon/execute ctx (process-unreconciled-transaction-ixs))))
+    (papillon/execute (process-unreconciled-transaction-ixs) ctx)))
 
 ;; This also shows of spinning up multiple interceptor chains and executing
 ;; them in parallel and collecting the results into a single context result

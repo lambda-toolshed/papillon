@@ -102,13 +102,14 @@
     {:supports-timing? true}))
 
 (go
-  (let [c (execute {} [instrument-timings-ix
-                       important-ix
-                       long-running-ix
-                       another-important-ix
-                       some-more-long-running-ix
-                       yet-another-important-ix
-                       varying-duration-ix])]
+  (let [c (execute [instrument-timings-ix
+                    important-ix
+                    long-running-ix
+                    another-important-ix
+                    some-more-long-running-ix
+                    yet-another-important-ix
+                    varying-duration-ix]
+                   {})]
     (println)
     (println "Results:")
     (clojure.pprint/pprint (<! c))))
