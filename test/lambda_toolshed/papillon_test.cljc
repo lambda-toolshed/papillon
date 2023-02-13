@@ -174,7 +174,7 @@
          [res _] (alts! [(ix/execute ixs {::ix/trace []})
                          (async/timeout 10)])]
      (is (map? res))
-     (is (= "Context channel was closed." (ex-message (res ::error))))
+     (is (= "Context was lost!" (ex-message (res ::error))))
      (is (= expected-log (::ix/trace res))))))
 
 (deftest leave-chain-is-resumed-when-error-processor-removes-error-key

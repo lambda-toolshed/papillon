@@ -29,26 +29,23 @@
   [ctx]
   (update ctx ::queue empty))
 
-(defn- async-catch
-  "Takes a value from the channel `c` and checks if it is an error type value.
-  If the result is an error type value then add that to the context `ctx` under
-  the `:lambda-toolshed.papillon/error` key and return it, otherwise return the
-  value unchanged."
-  [ctx c]
-  (go
-    (let [x (<! c)]
-      (cond
-        (nil? x) (assoc ctx ::error (ex-info "Context channel was closed." {::ctx ctx}))
-        (error? x) (assoc ctx ::error x)
-        :else x))))
+(defn- transition
+  "Transition the context `ctx` to the candidate context value `candidate`.  This function
+  works synchronously with value candidates -any async processing should be performed prior
+  to invoking this function."
+  [ctx candidate]
+  (cond
+    (reduced? candidate) (clear-queue (transition ctx (unreduced candidate)))
+    (error? candidate) (assoc (clear-queue ctx) ::error candidate)
+    (not= (-> candidate meta :type) ::ctx) (assoc (clear-queue ctx)
+                                                  ::error (ex-info "Context was lost!"
+                                                                   {::ctx ctx ::candidate-ctx candidate}))
+    :else candidate))
 
 (defn- try-stage
   "Try to invoke the stage function at the `stage` key of the interceptor `ix`
   with the context `ctx` and return the result.  If there is no value at the
   `stage` key the context is returned unchanged.
-
-  Errors synchronously thrown by the stage function are caught and added to
-  the original context under `:lambda-toolshed.papillon/error` key.
 
   If the `:lambda-toolshed.papillon/trace` key is present then stage function
   invocations are conj'd onto its value."
@@ -56,15 +53,14 @@
   (let [ctx (if trace
               (update ctx ::trace conj [(or (:name ix) (-> ix meta :name)) stage])
               ctx)]
-    (if-let [f (stage ix)]
+    (let [f (or (stage ix) identity)]
       (try
         (let [res (f ctx)]
           (if (satisfies? ReadPort res)
-            (async-catch ctx res)
-            res))
+            (go (transition ctx (<! res)))
+            (transition ctx res)))
         (catch #?(:clj Throwable :cljs :default) err
-          (assoc ctx ::error err)))
-      ctx)))
+          (transition ctx err))))))
 
 (defn- enter
   "Run the queued enter chain in the given context `ctx`.  If the
@@ -79,17 +75,14 @@
   channel, but continues until it gets a non-ReadPort value for the
   context."
   [ctx]
-  (cond
-    (satisfies? ReadPort ctx) (go (enter (<! ctx)))
-    (::error ctx) (clear-queue ctx)
-    (reduced? ctx) (clear-queue (unreduced ctx))
-    :else (let [queue (::queue ctx)]
-            (if-let [ix (peek queue)]
-              (recur (-> ctx
-                         (update ::queue pop)
-                         (update ::stack conj ix)
-                         (try-stage ix :enter)))
-              ctx))))
+  (if (satisfies? ReadPort ctx)
+    (go (enter (<! ctx)))
+    (if-let [ix (peek (::queue ctx))]
+      (recur (-> ctx
+                 (update ::queue pop)
+                 (update ::stack conj ix)
+                 (try-stage ix :enter)))
+      ctx)))
 
 (defn- leave
   "Runs the stacked `:leave` chain or `:error` chain in the given context `ctx`.
@@ -102,19 +95,19 @@
   [ctx]
   (if (satisfies? ReadPort ctx)
     (go (leave (<! ctx)))
-    (let [stack (::stack ctx)]
-      (if-let [ix (peek stack)]
-        (recur (-> ctx
-                   (update ::stack pop)
-                   (try-stage ix (if (::error ctx) :error :leave))))
-        ctx))))
+    (if-let [ix (peek (::stack ctx))]
+      (recur (-> ctx
+                 (update ::stack pop)
+                 (try-stage ix (if (::error ctx) :error :leave))))
+      ctx)))
 
 (defn- init-ctx
   "Inialize the given context `ctx` with the necessary data structures to
   process the interceptor chain `ixs`."
   [ctx ixs]
-  (assoc (enqueue ctx ixs)
-         ::stack []))
+  (-> (assoc (enqueue ctx ixs)
+             ::stack [])
+      (vary-meta assoc :type ::ctx)))
 
 (defn- present-sync
   [result]
