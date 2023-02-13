@@ -36,10 +36,10 @@
       (is (= (::ix/queue ctx) (apply conj ixs ixs2))))))
 
 (deftest clear-queue
-  (testing "removes the queue key from the context"
+  (testing "clears the context's queue"
     (let [ixs [{:enter identity}]
           ctx (ix/clear-queue (ix/enqueue {} ixs))]
-      (is (not (contains? ctx ::ix/queue))))))
+      (is (empty? (ctx ::ix/queue))))))
 
 (deftest allows-for-empty-chain-of-interceptors
   (is (= {::ix/queue #?(:clj clojure.lang.PersistentQueue/EMPTY

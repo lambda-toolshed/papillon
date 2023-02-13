@@ -23,6 +23,12 @@
   #?(:clj (instance? Throwable x)
      :cljs (instance? js/Error x)))
 
+(defn clear-queue
+  "Empty the interceptor queue of the given context `ctx`, thus ensuring no
+  further processing of the `enter` chain is attempted."
+  [ctx]
+  (update ctx ::queue empty))
+
 (defn- async-catch
   "Takes a value from the channel `c` and checks if it is an error type value.
   If the result is an error type value then add that to the context `ctx` under
@@ -59,12 +65,6 @@
         (catch #?(:clj Throwable :cljs :default) err
           (assoc ctx ::error err)))
       ctx)))
-
-(defn clear-queue
-  "Remove the interceptor queue from the given context `ctx`, thus ensuring no
-  further processing of the `enter` chain is attempted."
-  [ctx]
-  (dissoc ctx ::queue))
 
 (defn- enter
   "Run the queued enter chain in the given context `ctx`.  If the
