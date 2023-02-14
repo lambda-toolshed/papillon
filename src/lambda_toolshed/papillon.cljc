@@ -120,9 +120,7 @@
   (go-loop [ctx result]
     (if (satisfies? ReadPort ctx)
       (recur (<! ctx))
-      (if-let [error (::error ctx)]
-        error
-        ctx))))
+      (or (::error ctx) ctx))))
 
 (defn- namer [i ix]
   (if (:name ix)
