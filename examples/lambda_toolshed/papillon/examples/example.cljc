@@ -4,9 +4,8 @@
    [clojure.core.async :as async :refer [go <! >! chan]]
    clojure.pprint))
 
-;; Synchronous interceptor with that only handles items
+;; Synchronous interceptor that only handles items
 ;; on enter, and adds a new key to the context
-;; :name key is currently optional and not used by Papillon
 (def one-ix
   {:name :one-ix
    :enter (fn [ctx]
@@ -14,9 +13,8 @@
 
 ;; Run an interceptor chain with one interceptor in it that is synchronous
 ;; and does not take an initial context to augment
-(go
-  (let [c (execute [one-ix])]
-    (clojure.pprint/pprint (<! c))))
+(let [c (execute [one-ix])]
+  (clojure.pprint/pprint c))
 
 ;; Synchronous interceptor with that only handles items
 ;; on enter, and updates an existing key in the context
@@ -27,39 +25,37 @@
 
 ;; Run an interceptor chain with one interceptor in it that is synchronous
 ;; and does not take an initial context to augment
-(go
-  (let [c (execute [one-ix
-                    double-number-ix])]
-    (clojure.pprint/pprint (<! c))))
+(let [c (execute [one-ix
+                  double-number-ix])]
+  (clojure.pprint/pprint c))
 
 ;; Define an interceptor that prints out a message for the different
 ;; stages that it handles, along with the context
-(defn make-trace-ix [enter-msg leave-msg error-msg]
-  {:name :make-trace-ix
+(defn make-logger-ix [enter-msg leave-msg error-msg]
+  {:name :logger-ix
    :enter (fn [ctx]
-            (println "make-trace-ix" enter-msg)
+            (println "logger-ix" enter-msg)
             (clojure.pprint/pprint ctx)
             ctx)
    :leave (fn [ctx]
-            (println "make-trace-ix" leave-msg)
+            (println "logger-ix" leave-msg)
             (clojure.pprint/pprint ctx)
             ctx)
    :error (fn [ctx]
-            (println "make-trace-ix" error-msg)
+            (println "logger-ix" error-msg)
             (clojure.pprint/pprint ctx)
             ctx)})
 
 ;; The execute takes a seq of interceptors for the queue, so
 ;; we can maniuplate the base sequence of interceptors before we
 ;; start execution
-(go
-  (let [c (execute (interleave (repeat (make-trace-ix "entering" "leaving" "errored ❌"))
-                               [one-ix
-                                double-number-ix
-                                double-number-ix]))]
-    (clojure.pprint/pprint (<! c))))
+(let [c (execute (interleave (repeat (make-logger-ix "entering" "leaving" "errored ❌"))
+                             [one-ix
+                              double-number-ix
+                              double-number-ix]))]
+  (clojure.pprint/pprint c))
 
-;; More complex tracing functionality, that shows that since the queue
+;; More complex debugging functionality, that shows that since the queue
 ;; and the stack are on the context, one can use that to their advantage
 (letfn [(describe-interceptor [ix] (or (:name ix) ix))
         (prettify-interceptors [ixs] (map describe-interceptor ixs))
@@ -68,38 +64,37 @@
         (prettify-ctx [ctx] (prettify-keys ctx
                                            :lambda-toolshed.papillon/queue prettify-queue
                                            :lambda-toolshed.papillon/stack prettify-interceptors))
-        (make-trace [stage] (fn [ctx]
-                              (clojure.pprint/pprint (str "Trace:: stage" stage))
-                              (clojure.pprint/pprint (prettify-ctx ctx))
-                              (println)
-                              ctx))]
-  (def trace-ix
+        (make-debugger [stage] (fn [ctx]
+                                 (clojure.pprint/pprint (str "Debug:: stage" stage))
+                                 (clojure.pprint/pprint (prettify-ctx ctx))
+                                 (println)
+                                 ctx))]
+  (def debug-ix
     {:name :trace-ix
-     :enter (make-trace :enter)
-     :leave (make-trace :leave)
-     :error (make-trace :error)}))
+     :enter (make-debugger :enter)
+     :leave (make-debugger :leave)
+     :error (make-debugger :error)}))
 
 ;; Are we in debug mode?
 ;;   (of course we are; we are playing with the examples.)
 ;;   real code could pull from env/config/dynamic var/request header, etc.
 (def debug true)
 
-;; A simplistic tracing helper to enable tracing when in debug mode
-(defn with-tracing
+;; A simplistic debugger helper to conditionally enable itx debugging
+(defn with-debugging
   [ixs]
   (if debug
-    (interleave (repeat trace-ix) ixs)
+    (interleave (repeat debug-ix) ixs)
     ixs))
 
 ;; Do some doubling, but use the pretty tracing to show how the
 ;; context is available to be munged for display, without updating
 ;; the context itself and killing the execution chain.
 ;; Persistant Data Structures FOR THE WIN!!
-(go
-  (let [c (execute (with-tracing [one-ix
+(let [c (execute (with-debugging [one-ix
                                   double-number-ix
                                   double-number-ix]))]
-    (clojure.pprint/pprint (<! c))))
+  (clojure.pprint/pprint c))
 
 ;; Asynchronous handler; returns a channel with the updated context inside it
 ;; Simple version where it is a go block
@@ -108,14 +103,14 @@
    :enter (fn [ctx]
             (go (update ctx :number #(* % 2))))})
 
-;; Do some asynchronous doubling, and use the pretty tracing to show how the
-;; context is available to be munged for display, without updating
+;; Do some asynchronous doubling, and use the pretty debugging to show how
+;; the context is available to be munged for display, without updating
 ;; the context itself and killing the execution chain.
 ;; Persistant Data Structures FOR THE WIN!!
 (go
-  (let [c (execute (with-tracing [one-ix
-                                  async-double-number-ix
-                                  async-double-number-ix]))]
+  (let [c (execute (with-debugging [one-ix
+                                    async-double-number-ix
+                                    async-double-number-ix]))]
     (clojure.pprint/pprint (<! c))))
 
 ;; Asynchronous handler; returns a channel with the updated context inside it
@@ -128,13 +123,13 @@
                 (>! c (update ctx :number #(* % %))))
               c))})
 
-;; Do some asynchronous doubling and squaring, with pretty tracing
+;; Do some asynchronous doubling and squaring, with pretty debugging
 (go
-  (let [c (execute (with-tracing [one-ix
-                                  async-double-number-ix
-                                  async-square-number-ix
-                                  async-double-number-ix
-                                  async-square-number-ix]))]
+  (let [c (execute (with-debugging [one-ix
+                                    async-double-number-ix
+                                    async-square-number-ix
+                                    async-double-number-ix
+                                    async-square-number-ix]))]
     (clojure.pprint/pprint (<! c))))
 
 ;; mark the context as reduced to stop processing
@@ -144,14 +139,13 @@
 
 ;; stop pretty much "immediately" after we get the number
 ;; in the context
-(go
-  (let [c (execute (with-tracing [one-ix
+(let [c (execute (with-debugging [one-ix
                                   reduced-ix
                                   async-double-number-ix
                                   async-square-number-ix
                                   async-double-number-ix
                                   async-square-number-ix]))]
-    (clojure.pprint/pprint (<! c))))
+  (clojure.pprint/pprint c))
 
 ;; "Something went wrong", this synchronous interceptor
 ;; throws an error
@@ -161,14 +155,13 @@
 
 ;; we bail on errors, and start processing the stack calling
 ;; the error handler on the interceptors
-(go
-  (let [c (execute (interleave (repeat trace-ix)
-                               [error-ix
-                                async-double-number-ix
-                                async-square-number-ix
-                                async-double-number-ix
-                                async-square-number-ix]))]
-    (clojure.pprint/pprint (<! c))))
+(let [c (execute (interleave (repeat debug-ix)
+                             [error-ix
+                              async-double-number-ix
+                              async-square-number-ix
+                              async-double-number-ix
+                              async-square-number-ix]))]
+  (clojure.pprint/pprint c))
 
 ;; Error handlers that would like to resolve the error
 (def resolving-error-handler-ix
@@ -179,11 +172,10 @@
 
 ;; Error handlers have to be registered before the interceptor that throws/returns
 ;; the error since things after it never get called.
-(go
-  (let [c (execute (interleave (repeat trace-ix)
-                               [resolving-error-handler-ix
-                                error-ix]))]
-    (clojure.pprint/pprint (<! c))))
+(let [c (execute (interleave (repeat debug-ix)
+                             [resolving-error-handler-ix
+                              error-ix]))]
+  (clojure.pprint/pprint c))
 
 ;; Error handlers don't have to resolve, they may only clean up resources
 ;; created in :enter
@@ -220,13 +212,12 @@
             (update ctx :number (fn [n] (if (= 1 n) "one" str))))})
 
 ;; Error handlers are allowed to not handle the error, but do other processing
-(go
-  (let [c (execute (interleave (repeat trace-ix)
-                               [one-ix
-                                resource-cleanup-error-handler-ix
-                                transforming-error-handler-ix
-                                error-ix]))]
-    (clojure.pprint/pprint (<! c))))
+(let [c (execute (interleave (repeat debug-ix)
+                             [one-ix
+                              resource-cleanup-error-handler-ix
+                              transforming-error-handler-ix
+                              error-ix]))]
+  (clojure.pprint/pprint c))
 
 ;; "Something went wrong", asynchronous interceptors return an error
 ;; since throwing in async mode loses the thrown error
@@ -237,13 +228,12 @@
 ;; error handlers work the same if the error is returned inside the channel
 ;; If an error is detected it gets added to the context passed to the
 ;; interceptor that resulted in the error
-(go
-  (let [c (execute (interleave (repeat trace-ix)
-                               [one-ix
-                                resource-cleanup-error-handler-ix
-                                transforming-error-handler-ix
-                                error-async-ix]))]
-    (clojure.pprint/pprint (<! c))))
+(go (let [c (execute (interleave (repeat debug-ix)
+                                 [one-ix
+                                  resource-cleanup-error-handler-ix
+                                  transforming-error-handler-ix
+                                  error-async-ix]))]
+      (clojure.pprint/pprint (<! c))))
 
 ;; Error handlers can be asynchronous as well...
 (def async-transforming-error-handler-ix
@@ -257,13 +247,12 @@
             (go (update ctx :number (fn [n] (if (= 1 n) "one" (str n))))))})
 
 ;; the chain works the same regardless if the error handler is sync or async
-(go
-  (let [c (execute (interleave (repeat trace-ix)
-                               [one-ix
-                                resource-cleanup-error-handler-ix
-                                async-transforming-error-handler-ix
-                                error-async-ix]))]
-    (clojure.pprint/pprint (<! c))))
+(let [c (execute (interleave (repeat debug-ix)
+                             [one-ix
+                              resource-cleanup-error-handler-ix
+                              async-transforming-error-handler-ix
+                              error-async-ix]))]
+  (clojure.pprint/pprint c))
 
 ;; a leave handler may also throw, and that starts running the error chain
 (def leave-throws-ix
@@ -273,7 +262,7 @@
 ;; the error handling chain works the same regardless if the error
 ;; handler is sync or async
 (go
-  (let [c (execute (interleave (repeat trace-ix)
+  (let [c (execute (interleave (repeat debug-ix)
                                [one-ix
                                 resource-cleanup-error-handler-ix
                                 async-transforming-error-handler-ix
@@ -291,7 +280,7 @@
 ;; the error handling chain works the same regardless if the error
 ;; handler is sync or async
 (go
-  (let [c (execute (interleave (repeat trace-ix)
+  (let [c (execute (interleave (repeat debug-ix)
                                [one-ix
                                 resource-cleanup-error-handler-ix
                                 async-transforming-error-handler-ix
@@ -310,7 +299,7 @@
 ;; the error original error is swallowed
 ;; be careful about how your error handlers behave
 (go
-  (let [c (execute (interleave (repeat trace-ix)
+  (let [c (execute (interleave (repeat debug-ix)
                                [one-ix
                                 resource-cleanup-error-handler-ix
                                 async-transforming-error-handler-ix
@@ -332,20 +321,20 @@
 
 ;; exits early when the starting number is 2
 (go
-  (let [c (execute {:number 2}
-                   (interleave (repeat trace-ix)
+  (let [c (execute (interleave (repeat debug-ix)
                                [async-square-number-ix
                                 done-when-even-ix
-                                double-number-ix]))]
+                                double-number-ix])
+                   {:number 2})]
     (clojure.pprint/pprint (<! c))))
 
 ;; continues through the whole chain when the starting number is 3
 (go
-  (let [c (execute {:number 3}
-                   (interleave (repeat trace-ix)
+  (let [c (execute (interleave (repeat debug-ix)
                                [async-square-number-ix
                                 done-when-even-ix
-                                double-number-ix]))]
+                                double-number-ix])
+                   {:number 3})]
     (clojure.pprint/pprint (<! c))))
 
 ;; Interceptors can also manipulate the queue
@@ -363,19 +352,19 @@
 ;; if tracing is still desired, it would be part of the client
 ;; code that enqueues more items to the context
 (go
-  (let [c (execute {:number 3}
-                   (interleave (repeat trace-ix)
+  (let [c (execute (interleave (repeat debug-ix)
                                [async-square-number-ix
-                                ensure-even-ix]))]
+                                ensure-even-ix])
+                   {:number 3})]
     (clojure.pprint/pprint (<! c))))
 
 ;; the sqaure of 2 is even, so we are done; nothing more to add
 ;; to the queue
 (go
-  (let [c (execute {:number 2}
-                   (interleave (repeat trace-ix)
+  (let [c (execute (interleave (repeat debug-ix)
                                [async-square-number-ix
-                                ensure-even-ix]))]
+                                ensure-even-ix])
+                   {:number 2})]
     (clojure.pprint/pprint (<! c))))
 
 ;; Interceptors can also manipulate the queue
@@ -393,17 +382,30 @@
 ;; if tracing is still desired, it would be part of the client
 ;; code that enqueues more items to the context
 (go
-  (let [c (execute {:number 3}
-                   (interleave (repeat trace-ix)
+  (let [c (execute (interleave (repeat debug-ix)
                                [async-square-number-ix
-                                ensure-even-with-tracing-ix]))]
+                                ensure-even-with-tracing-ix])
+                   {:number 3})]
     (clojure.pprint/pprint (<! c))))
 
 ;; the sqaure of 2 is even, so we are done; nothing more to add
 ;; to the queue
 (go
-  (let [c (execute {:number 2}
-                   (interleave (repeat trace-ix)
+  (let [c (execute (interleave (repeat debug-ix)
                                [async-square-number-ix
-                                ensure-even-with-tracing-ix]))]
+                                ensure-even-with-tracing-ix])
+                   {:number 2})]
     (clojure.pprint/pprint (<! c))))
+
+;; It can be tricky trying to handle both sync *and* async behavior from chain execution.  If you
+;; are using *any* async interceptor fns it can be useful to force async returns and homogenize
+;; the return semantics.
+(let [force-async-itx {:leave (fn [ctx] (go ctx))
+                       :error (fn [ctx] (go ctx))}
+      maybe-async {:enter (fn [ctx] (if (even? (:number ctx)) (go ctx) ctx))}]
+  (go (let [c (execute [force-async-itx maybe-async double-number-ix]
+                       {:number 1})]
+        (clojure.pprint/pprint (<! c))))
+  (go (let [c (execute [force-async-itx double-number-ix maybe-async]
+                       {:number 2})]
+        (clojure.pprint/pprint (<! c)))))

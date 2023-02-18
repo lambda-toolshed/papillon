@@ -87,7 +87,7 @@ Sometimes things go wrong, and the caterpillar eats something that didn't agree 
 
 ### The Spec
 
-Interceptors are represented as a map with the optional keys of `:enter`, `:leave`, and/or `:exit`.  None of the keys are required to be on an interceptor map, and if no truthy value for the key being checked is found on the interceptor map, the executor will continue its processing skipping over the interceptor for that stage.
+Interceptors are represented as a map with the optional keys of `:enter`, `:leave`, and `:error`.  None of the keys are required to be on an interceptor map, and if no truthy value for the key being checked is found on the interceptor map, the executor will continue its processing skipping over the interceptor for that stage.  A `:name` can also provided, in which case there are some affordances for tracing the interceptor execution by name.
 
 The idea of sticking to a map instead of a record is that if the interceptor is a map, consumers can attach any other data to the interceptor, which the executor will ignored instead of actively discarding when converting to a record, allowing the extra keys and values on the interceptor map to be accessible while it exists on the queue or the stack in the context.
 
@@ -95,7 +95,7 @@ The idea of sticking to a map instead of a record is that if the interceptor is 
 
 ##### Empty Queue of Interceptors
 
-The enter stage is considered completed when there are no more interceptors on the queue, and will start processing the interceptor chain from the stack.
+The enter stage is considered completed when there are no more interceptors on the queue; at this point papillon will start processing the interceptor chain from the accumulated stack.
 
 ##### Reduced Context
 
@@ -116,7 +116,7 @@ The interceptor stack will continue to be consumed through the `:error` stage un
 | `:lambda-toolshed.papillon/queue` | The queue of interceptors.  This gets initialized with the interceptors passed to `execute`, but can be managed if you know what you are doing.                                                                                                                                                                                                                                                                            |
 | `:lambda-toolshed.papillon/stack` | The stack of interceptors for traversing back through the chain of interceptors encountered.                                                                                                                                                                                                                                                                                                                               |
 | `:lambda-toolshed.papillon/error` | This key should have the error information associated with it.  This key signifies we are in an error state, and interceptors with `:error` key will be processed, either for them to clean up some state (open connections, etc.) or attempt to handle and resolve the error and return nicely.  A few examples might be: turn the error into 500 HTTP response; put original message and error onto an error queue; etc. |
-
+| `:lambda-toolshed.papillon/trace` | A vector at this key signals that interceptor chain execution should be traced by conj'ing tuples of the form `[itx-name stage]` onto the vector at every step. |
 
 ### Asynchronous Interceptors
 
@@ -132,19 +132,19 @@ After the executor "unwraps" the asynchronous result, if it finds an error in th
 
 #### ClojureScript and JavaScript interop
 
-If you are in ClojureScript, and are in Promise land (Editors Note: this is drastically different from The Promised Land, and the two should not be confused), you can import the namespace `lambda-toolshed.papillon.async` which will have a Promise implement `ReadPort` and turn the Promise into something that can be read in the same way as a channel.
+If you are in ClojureScript, and are in Promise land (Editor's Note: this is drastically different from The Promised Land, and the two should not be confused), you can import the namespace `lambda-toolshed.papillon.async` which will have a Promise implement `ReadPort` and turn the Promise into something that can be read in the same way as a channel.
 
 This is done by using `cljs.core.async.interop/p->c`, taking the `PromiseChannel` returned from that and turning it into a channel with the result being a single item on the channel.
 
 ## Examples and Other ways to extend usage
 
-### Interceptor Tracing/Timing
+### Interceptor Tricks
 
-Because the interceptor executor takes a sequence of interceptors to build the processing queue from, we can manipulate that before execution time as it is data.  In the example below, if we have tracing enabled, we interleave a tracing interceptor, could be a timing capture interceptor, with the standard interceptors we are expecting to process as part of the interceptor chain.
+Because the interceptor executor takes a sequence of interceptors to build the processing queue, we can manipulate it before and even during execution.  In the example below, if we have tracing enabled, we interleave a tracing interceptor, could be a timing capture interceptor, with the standard interceptors we are expecting to process as part of the interceptor chain.
 
 And example of this is found in [examples/example.cljc](./examples/example.cljc), and the `with-tracing` function that interleaves a tracing interceptor with a sequence of interceptors when in "debug" mode.
 
-There is also an example of another tracing system that is a bit more advanced in [examples/dynamic_tracing.cljc](examples/dynamic_tracing.cljc), which will wraps every following interceptor in the queue with tracing/timing functions, if the interceptor map is marked with meta-data.
+There is also an example of another tracing system that is a bit more advanced in [examples/dynamic_tracing.cljc](examples/dynamic_tracing.cljc), which wraps every following interceptor in the queue with tracing/timing functions, if the interceptor map is marked with meta-data.
 
 ### Nesting Interceptor Executions
 

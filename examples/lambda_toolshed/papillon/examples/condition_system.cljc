@@ -147,9 +147,9 @@
 ;;     with the sequence in the http-request! method to
 ;;     see different error rates
 (go
-  (let [c (execute {:request-url "https://www.example.com"}
-                   [retry-http-ix
-                    request-ix])]
+  (let [c (execute [retry-http-ix
+                    request-ix]
+                   {:request-url "https://www.example.com"})]
     (clojure.pprint/pprint (<! c))))
 
 ;; Let's derive some keywords...
@@ -204,7 +204,7 @@
            [sig & sigs :as all-sigs] signal-hierarchy]
       (println "trying to find " sig " on interceptor " ix)
       (if-let [sig (first sigs)]
-        (if ix ; do we have an interceptor? or did we exhaust the stack?  
+        (if ix ; do we have an interceptor? or did we exhaust the stack?
           ;; yes we have an interceptor to check
           (if-let [f (sig ix)] ; can this interceptor handle the signal
             (apply f (concat [ctx] args)) ; yes? invoke it
@@ -250,7 +250,7 @@
 ;; ::http-request-failed key on the stack first
 ;; and then processes the stack looking for ::retry-request
 (go
-  (let [c (execute {:request-url "https://www.example.com"}
-                   [retry-request-ix
-                    advanced-request-signal-ix])]
+  (let [c (execute [retry-request-ix
+                    advanced-request-signal-ix]
+                   {:request-url "https://www.example.com"})]
     (clojure.pprint/pprint (<! c))))

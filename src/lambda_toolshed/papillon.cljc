@@ -2,18 +2,9 @@
   (:require
    [clojure.core.async :refer [<! go go-loop take! put! chan]]
    [clojure.core.async.impl.protocols :refer [ReadPort]]
-   [lambda-toolshed.papillon.async]))
-
-;;;; TODO: Official Support Interceptor names...
-;;;;   format-context to show names?
-;;;;   tracing with adding a name and stage call???
-;;;;     - remove by name ?
-;;;;     - insert before ?
-;;;;     - insert after ?
-
-;;;; TODO: Support logging/tracing?
-;;;;   interceptor log protocol??
-;;;;   support adding :before-stage and :after-stage callback as part of context?
+   [lambda-toolshed.papillon.async]
+   #?@(:cljs ([goog.string :as gstring]
+              goog.string.format))))
 
 (defn into-queue
   ([xs]
@@ -24,150 +15,163 @@
 
 (defn enqueue
   [ctx ixs]
-  (update-in ctx [:lambda-toolshed.papillon/queue] into-queue ixs))
+  (update-in ctx [::queue] into-queue ixs))
 
 (defn- error?
-  "Check if this is an exception."
+  "Is the given value `x` an exception?"
   [x]
   #?(:clj (instance? Throwable x)
      :cljs (instance? js/Error x)))
 
 (defn- async-catch
-  "Takes a value from a channel, and checks if it is an error type value.
-   If the result is an error type value add that to the previous context
-   under the `:lambda-toolshed.papillon/error` key and use that new result as the context.  Otherwise
-   use the value returned from the channel as the context."
-  [ctx res]
+  "Takes a value from the channel `c` and checks if it is an error type value.
+  If the result is an error type value then add that to the context `ctx` under
+  the `:lambda-toolshed.papillon/error` key and return it, otherwise return the
+  value unchanged."
+  [ctx c]
   (go
-    (let [x (<! res)]
-      (if (error? x)
-        (assoc ctx :lambda-toolshed.papillon/error x)
-        x))))
+    (let [x (<! c)]
+      (cond
+        (nil? x) (assoc ctx ::error (ex-info "Context channel was closed." {::ctx ctx}))
+        (error? x) (assoc ctx ::error x)
+        :else x))))
 
 (defn- try-stage
-  "Try to invoke a stage on an interceptor with a context.
-   If the stage is not present, it means the interceptor does not support
-   this stage, so return the context and proceed to the next interceptor
-   in the chain.
+  "Try to invoke the stage function at the `stage` key of the interceptor `ix`
+  with the context `ctx` and return the result.  If there is no value at the
+  `stage` key the context is returned unchanged.
 
-   This also catches any errors that are raised (from synchronous calls)
-   and adds the error to the original context under the key `:lambda-toolshed.papillon/error`."
-  [ctx ix stage]
-  (if-let [f (stage ix)]
-    (try
-      (let [res (f ctx)]
-        (if (satisfies? ReadPort res)
-          (go (<! (async-catch ctx res)))
-          res))
-      (catch #?(:clj Throwable :cljs :default) err
-        (assoc ctx :lambda-toolshed.papillon/error err)))
-    ctx))
+  Errors synchronously thrown by the stage function are caught and added to
+  the original context under `:lambda-toolshed.papillon/error` key.
+
+  If the `:lambda-toolshed.papillon/trace` key is present then stage function
+  invocations are conj'd onto its value."
+  [{trace ::trace :as ctx} ix stage]
+  (let [ctx (if trace
+              (update ctx ::trace conj [(or (:name ix) (-> ix meta :name)) stage])
+              ctx)]
+    (if-let [f (stage ix)]
+      (try
+        (let [res (f ctx)]
+          (if (satisfies? ReadPort res)
+            (async-catch ctx res)
+            res))
+        (catch #?(:clj Throwable :cljs :default) err
+          (assoc ctx ::error err)))
+      ctx)))
 
 (defn clear-queue
-  "Clear out the queue so that no further items in the enter chain are
-  processed.  Primarily used so one doesn't have to worry about
-  namespaced keywords."
+  "Remove the interceptor queue from the given context `ctx`, thus ensuring no
+  further processing of the `enter` chain is attempted."
   [ctx]
-  (dissoc ctx :lambda-toolshed.papillon/queue))
+  (dissoc ctx ::queue))
 
 (defn- enter
-  "Runs the enter chain.  If the key :lambda-toolshed.papillon/error is present in the context
-  we stop the `enter` chain and proceed to the next stage.  If the
-  context is reduced, we unreduce the context and proceed to the next
-  stage.  Reducing the context allows us to have an early return
-  mechanism without causing users to resort to throwing errors and
-  then immediately handling them, or having to worry about clearing
-  out the queue themselves.
+  "Run the queued enter chain in the given context `ctx`.  If the
+  `:lambda-toolshed.papillon/error` key is present in `ctx` then clear the queue
+  (thus terminating the `enter` chain) and start processing the `:error` chain.
+  If `ctx` is reduced (per `clojure.core/reduced?`) an early return is inferred
+  and the unreduced `ctx` is used to start processing the `:leave` chain.
 
   `enter` also 'collapses' nested async calls by recurisvely calling
   itself with the value taken from the channel to ensure that if a
   channel was returned, it doesn't halt if that channel is another
   channel, but continues until it gets a non-ReadPort value for the
   context."
-  [ctx result-chan]
+  [ctx]
   (cond
-    (satisfies? ReadPort ctx) (take! ctx #(enter % result-chan))
-    (:lambda-toolshed.papillon/error ctx) (put! result-chan  (clear-queue ctx))
-    (reduced? ctx) (put! result-chan (clear-queue (unreduced ctx)))
-    :else (let [queue (:lambda-toolshed.papillon/queue ctx)]
-            (if (empty? queue)
-              (put! result-chan ctx)
-              (let [ix (peek queue)
-                    new-queue (pop queue)
-                    new-stack (conj (:lambda-toolshed.papillon/stack ctx) ix)]
-                (recur (-> ctx
-                           (assoc :lambda-toolshed.papillon/queue new-queue
-                                  :lambda-toolshed.papillon/stack new-stack)
-                           (try-stage ix :enter)) result-chan))))))
+    (satisfies? ReadPort ctx) (go (enter (<! ctx)))
+    (::error ctx) (clear-queue ctx)
+    (reduced? ctx) (clear-queue (unreduced ctx))
+    :else (let [queue (::queue ctx)]
+            (if-let [ix (peek queue)]
+              (recur (-> ctx
+                         (update ::queue pop)
+                         (update ::stack conj ix)
+                         (try-stage ix :enter)))
+              ctx))))
 
 (defn- leave
-  "Runs the leave and error chain.  `leave` will run the `:lambda-toolshed.papillon/error`
-  key function in the interceptor if there is an `:lambda-toolshed.papillon/error` in the context.
+  "Runs the stacked `:leave` chain or `:error` chain in the given context `ctx`.
+  if there is a value at the `:lambda-toolshed.papillon/error` key in `ctx` then
+  the `:error` chain is run, otherwise the `:leave` chain is run.
 
-  If there is no `:lambda-toolshed.papillon/error` key in the context, it will run the function
-  under the `:leave` key in the interceptor.
+  You should remove the `:lambda-toolshed.papillon/error` key from the returned
+  context if you handle the error.  This will stop processing the `:error` chain
+  and start processing the `:leave` chain in the stack of interceptors."
+  [ctx]
+  (if (satisfies? ReadPort ctx)
+    (go (leave (<! ctx)))
+    (let [stack (::stack ctx)]
+      (if-let [ix (peek stack)]
+        (recur (-> ctx
+                   (update ::stack pop)
+                   (try-stage ix (if (::error ctx) :error :leave))))
+        ctx))))
 
-  If your interceptor had decided to handle the error in the context, it
-  should remove the `:lambda-toolshed.papillon/error` key from the context, and allow any remaining
-  interceptors to run their `:leave` functions, unless one of them throws
-  an error.
-
-  If the function under the `:enter` key 'opened' a resource, you will
-  want to ensure it is closed in both the `:lambda-toolshed.papillon/error` and `:leave` case, as either path may be taken on the way back up the interceptor chain."
-  [in result-chan]
-  (if (satisfies? ReadPort in)
-    (take! in #(leave % result-chan))
-    (let [stack (:lambda-toolshed.papillon/stack in)]
-      (if (empty? stack)
-        (put! result-chan in)
-        (let [ix (peek stack)
-              new-stack (pop stack)
-              stage (if (:lambda-toolshed.papillon/error in) :error :leave)]
-          (recur (-> in
-                     (assoc :lambda-toolshed.papillon/stack new-stack)
-                     (try-stage ix stage))
-                 result-chan))))))
 (defn- init-ctx
-  "Sets up the context with the queue key and the stack key.
-
-  The queue is for the forward processing of items, and the stack
-  is what is used to trace backwards through the interceptor stack"
+  "Inialize the given context `ctx` with the necessary data structures to
+  process the interceptor chain `ixs`."
   [ctx ixs]
   (assoc (enqueue ctx ixs)
-         :lambda-toolshed.papillon/stack []))
+         ::stack []))
 
-(defn- await-result
-  "'Unwinds' any nested channels and returns the context"
-  [res]
-  (go-loop [ctx res]
+(defn- present-sync
+  [result]
+  (if-let [error (::error result)]
+    (throw error)
+    result))
+
+(defn- present-async
+  [result]
+  (go-loop [ctx result]
     (if (satisfies? ReadPort ctx)
       (recur (<! ctx))
-      ctx)))
+      (if-let [error (::error ctx)]
+        error
+        ctx))))
+
+(defn- namer [i ix]
+  (if (:name ix)
+    ix
+    (let [fmt #?(:clj format :cljs gstring/format)]
+      (vary-meta ix update :name (fnil identity (fmt "itx%02d" i))))))
 
 (defn execute
-  "Executes the interceptor call chain as a queue.
+  "Execute the interceptor chain `ixs` with the given initial context `ctx`.
 
-  It will run foward through the chain calling the function
-  associated to the `:enter` key where that where that function
-  exists, while adding the interceptor to the history of
-  interceptors seen, so when the :enter chain is
-  finished, it can run backwards through the history
-  (reverse order) to apply the functions associated to `:leave`,
-  or `:error`, as determined by the `:lambda-toolshed.papillon/error` key
-  on the context.
+  Run foward through the chain calling the functions associated with the
+  `:enter` key (where it exists), while accumulating a stack of interceptors
+  seen.
 
-  `execute` takes any map as an initial context, and will associate
-  the queue and stack into the context to start processing.  If no
-  context is provided an empty map is used.  Note: The behavior of
-  starting with an initial context that contains the key
-  `:lambda-toolshed.papillon/error` is left unspecified and may be subject to
-  change."
+  When the `:enter` chain is exhausted, run the accumulated stack in reverse
+  order invoking the function at the `:leave` or `:error` key based on the
+  `:lambda-toolshed.papillon/error` key of the context.
+
+  The initial context `ctx` is augmented with the necessary housekeeping data
+  structures before processing the chain.  If no context is provided an empty
+  map is used.
+
+  Note: Starting with an initial context that contains the key
+  `:lambda-toolshed.papillon/error` is undefined and may change.
+
+  Executing the interceptor chain can complete synchronously or asynchronously.
+  If any interceptor function (enter, leave or error) completes asynchronously,
+  then chain execution will complete asynchronously, otherwise the chain execution
+  will complete synchronously.
+
+  The result of executing the chain is either:
+
+  1. (async) a channel whose sole value is the chain execution result or an
+     exception (when not handled by the chain).
+  2. (sync) the chain execution result, or a thrown exception (when not handled
+     by the chain)."
   ([ixs]
-   (execute {} ixs))
-  ([ctx ixs]
-   (let [ctx (init-ctx ctx ixs)
-         enter-res (chan 1)
-         leave-res (chan 1)]
-     (enter ctx enter-res)
-     (leave enter-res leave-res)
-     (await-result leave-res))))
+   (execute ixs {}))
+  ([ixs ctx]
+   (let [ixs (map-indexed namer ixs)
+         ctx (init-ctx ctx ixs)
+         result (leave (enter ctx))]
+     (if (satisfies? ReadPort result)
+       (present-async result)
+       (present-sync result)))))

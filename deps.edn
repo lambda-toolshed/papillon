@@ -2,53 +2,55 @@
  :deps {org.clojure/clojure {:mvn/version "1.10.3"}
         org.clojure/clojurescript {:mvn/version "1.10.773"}
         org.clojure/core.async {:mvn/version "1.3.618"}}
- :aliases
- {:build {:deps {io.github.seancorfield/build-clj
-                 {:git/tag "v0.6.4" :git/sha "c21cfde"}}
-          :ns-default build}
-  :dev {:extra-paths ["dev"]}
-  :test {:extra-paths ["test"]
-         :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}
-                      io.github.cognitect-labs/test-runner {:git/tag "v0.5.0" :git/sha "48c3c67"}}
-         :jvm-opts ["-DENVIRONMENT=test"]}
+ :aliases {:build {:deps {io.github.seancorfield/build-clj
+                          {:git/tag "v0.6.4" :git/sha "c21cfde"}}
+                   :ns-default build}
+           :dev {:extra-paths ["dev"]
+                 :jvm-opts ["-DENVIRONMENT=development"]}
+           :test {:extra-paths ["test"]
+                  :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}}}
+           :project/test-cljs {:main-opts ["-m" "cljs-test-runner.main"]
+                               :extra-deps {olical/cljs-test-runner {:mvn/version "3.8.0"}}
+                               :jvm-opts ["-DENVIRONMENT=test"]}
+           :project/test-clj {:extra-deps {io.github.cognitect-labs/test-runner
+                                           {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
+                              :main-opts ["-m" "cognitect.test-runner"]
+                              :exec-fn cognitect.test-runner.api/test
+                              :jvm-opts ["-DENVIRONMENT=test"]}
 
-  :project/test-cljs {:main-opts ["-m" "cljs-test-runner.main"]
-                      :extra-deps {olical/cljs-test-runner {:mvn/version "3.8.0"}}
-                      :jvm-opts ["-DENVIRONMENT=test"]}
+           ;; for interactive test running
+           :project/watch-test {:extra-deps {lambdaisland/kaocha {:mvn/version "1.60.977"}}
+                                :exec-fn kaocha.runner/exec-fn
+                                :exec-args {:watch? true
+                                            :skip-meta :slow
+                                            :fail-fast? true}}
+           ;; --------------------------- Build/Deploy Tasks ----------------------------
+           ;; Bump the version by a patch and generate a corresponding pom file with the groupId "lambda-toolshed"
+           ;; $ clojure -M:project/pom patch -t IncrementType
+           :project/pom {:main-opts ["-m" "garamond.main" "--group-id" "lambda-toolshed"
+                                     "--scm-url" "https://github.com/lambda-toolshed/papillon" "-p"]
+                         ;; because we don't need the project's dependencies loaded -graph parses the deps.edn "out-of-band":
+                         :replace-deps {com.workframe/garamond {:mvn/version "0.4.0"}}}
 
-  :project/test-clj {:extra-deps {lambdaisland/kaocha {:mvn/version "1.60.977"}}
-                     :exec-fn kaocha.runner/exec-fn
-                     :exec-args {}}
+           :lint/kondo {:extra-deps {clj-kondo/clj-kondo {:mvn/version "RELEASE"}}
+                        :main-opts  ["-m" "clj-kondo.main" "--lint" "src" "--lint" "test" "--lint" "examples"]}
 
-  ;; for interactive test running
-  :project/watch-test {:extra-deps {lambdaisland/kaocha {:mvn/version "1.60.977"}}
-                       :exec-fn kaocha.runner/exec-fn
-                       :exec-args {:watch? true
-                                   :skip-meta :slow
-                                   :fail-fast? true}}
-  ;; --------------------------- Build/Deploy Tasks ----------------------------
-  ;; Bump the version by a patch and generate a corresponding pom file with the groupId "lambda-toolshed"
-  ;; $ clojure -M:project/pom patch -t IncrementType
-  :project/pom {:main-opts ["-m" "garamond.main" "--group-id" "lambda-toolshed"
-                            "--scm-url" "https://github.com/lambda-toolshed/papillon" "-p"]
-                ;; because we don't need the project's dependencies loaded -graph parses the deps.edn "out-of-band":
-                :replace-deps {com.workframe/garamond {:mvn/version "0.4.0"}}}
+           :project/format {:extra-deps {cljfmt/cljfmt {:mvn/version "0.8.0"}}
+                            :main-opts  ["-m" "cljfmt.main" "fix"]}
 
-  :lint/kondo {:extra-deps {clj-kondo/clj-kondo {:mvn/version "RELEASE"}}
-               :main-opts  ["-m" "clj-kondo.main" "--lint" "src" "--lint" "test" "--lint" "examples"]}
+           ;; Reference: https://github.com/liquidz/antq
+           ;; Example Usage: clj -M:outdated
+           :outdated {:extra-deps {com.github.liquidz/antq {:mvn/version "RELEASE"}}
+                      :main-opts ["-m" "antq.core" "--skip=github-action"]}
 
-  :project/format {:extra-deps {cljfmt/cljfmt {:mvn/version "0.8.0"}}
-                   :main-opts  ["-m" "cljfmt.main" "fix"]}
+           :project/format-check {:extra-deps {cljfmt/cljfmt {:mvn/version "0.8.0"}}
+                                  :main-opts  ["-m" "cljfmt.main" "check"]}
 
-  :project/format-check {:extra-deps {cljfmt/cljfmt {:mvn/version "0.8.0"}}
-                         :main-opts  ["-m" "cljfmt.main" "check"]}
+           :project/cljs-nrepl {:main-opts ["-m" "nrepl.cmdline" "--middleware" "[\"cider.piggieback/wrap-cljs-repl\"]"]
+                                :extra-deps  {nrepl/nrepl  {:mvn/version "0.9.0"}
+                                              cider/piggieback {:mvn/version "0.5.3"}}}
 
-  :project/cljs-nrepl {:main-opts ["-m" "nrepl.cmdline" "--middleware" "[\"cider.piggieback/wrap-cljs-repl\"]"]
-                       :extra-deps  {nrepl/nrepl  {:mvn/version "0.9.0"}
-                                     cider/piggieback {:mvn/version "0.5.3"}}}
-
-  :project/nrepl {:main-opts ["-m" "nrepl.cmdline" "--middleware" "[\"cider.nrepl/cider-middleware\"]"]
-                  :extra-deps {nrepl/nrepl {:mvn/version "0.9.0"}
-                               cider/cider-nrepl {:mvn/version "0.25.9"}}
-                  :jvm-opts ["-DENVIRONMENT=staging"]}}}
-
+           :project/nrepl {:main-opts ["-m" "nrepl.cmdline" "--middleware" "[\"cider.nrepl/cider-middleware\"]"]
+                           :extra-deps {nrepl/nrepl {:mvn/version "0.9.0"}
+                                        cider/cider-nrepl {:mvn/version "0.25.9"}}
+                           :jvm-opts ["-DENVIRONMENT=staging"]}}}

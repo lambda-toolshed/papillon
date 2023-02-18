@@ -38,11 +38,11 @@ test-clj: .make.test-clj
 test-cljs: .make.test-cljs
 
 .make.test-clj: deps.edn $(testfiles) $(srcfiles)
-	clojure -T:build test-clj
+	clojure -X:test:project/test-clj
 	touch .make.test-clj
 
 .make.test-cljs: deps.edn $(testfiles) $(srcfiles)
-	clojure -T:build test-cljs
+	clojure -M:test:project/test-cljs
 	touch .make.test-cljs
 
 lint: $(testfiles) $(srcfiles)
@@ -60,11 +60,11 @@ install: ci
 deploy: ci
 	clojure -T:build deploy
 
-# clean:
-# 	rm -f $(jar-file) $(pom-file)
-# 	rm -rf target/*
-# 	rm -rf cljs-test-runner-out
-# 	rm -f .make.*
+clean:
+	rm -f $(jar-file) $(pom-file)
+	rm -rf target/*
+	rm -rf cljs-test-runner-out
+	rm -f .make.*
 
 # Copied from: https://github.com/jeffsp/makefile_help/blob/master/Makefile
 # Tab nonesense resolved with help from StackOverflow... need a literal instead of the \t escape on MacOS
