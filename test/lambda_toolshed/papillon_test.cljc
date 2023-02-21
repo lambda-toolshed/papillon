@@ -126,12 +126,29 @@
         ixs [capture-ix
              {:name :thrower :enter (fn [_] (throw the-exception))}]
         expected-log [[:capture :enter]
-	              [:thrower :enter]
-	              [:thrower :error]
-	              [:capture :error]]]
+                      [:thrower :enter]
+                      [:thrower :error]
+                      [:capture :error]]]
     (let [res (ix/execute ixs {::ix/trace []})]
       (is (= the-exception (::error res)))
       (is (= expected-log (::ix/trace res))))
+    (go-test
+     (let [ixs (concat [async-ix] ixs)
+           expected-log (concat [[:->async :enter]] expected-log [[:->async :leave]])
+           [res _] (alts! [(ix/execute ixs {::ix/trace []})
+                           (async/timeout 10)])]
+       (is (map? res))
+       (is (= the-exception (::error res)))
+       (is (= expected-log (::ix/trace res)))))))
+
+(deftest error-chain-is-invoked-when-enter-asynchronously-returns-an-exception
+  (let [the-exception (ex-info "the exception" {})
+        ixs [capture-ix
+             {:name :thrower :enter (fn [_] (go the-exception))}]
+        expected-log [[:capture :enter]
+                      [:thrower :enter]
+                      [:thrower :error]
+                      [:capture :error]]]
     (go-test
      (let [ixs (concat [async-ix] ixs)
            expected-log (concat [[:->async :enter]] expected-log [[:->async :leave]])
@@ -146,9 +163,9 @@
         ixs [capture-ix
              {:name :thrower :leave (fn [_] (throw the-exception))}]
         expected-log [[:capture :enter]
-	              [:thrower :enter]
-	              [:thrower :leave]
-	              [:capture :error]]]
+                      [:thrower :enter]
+                      [:thrower :leave]
+                      [:capture :error]]]
     (let [res (ix/execute ixs {::ix/trace []})]
       (is (= the-exception (::error res)))
       (is (= expected-log (::ix/trace res))))
@@ -161,10 +178,26 @@
        (is (= the-exception (::error res)))
        (is (= expected-log (::ix/trace res)))))))
 
+(deftest error-chain-is-invoked-when-leave-asynchronously-returns-an-exception
+  (let [the-exception (ex-info "the exception" {})
+        ixs [capture-ix
+             {:name :thrower :leave (fn [_] (go the-exception))}]
+        expected-log [[:capture :enter]
+                      [:thrower :enter]
+                      [:thrower :leave]
+                      [:capture :error]]]
+    (go-test
+     (let [ixs (concat [async-ix] ixs)
+           expected-log (concat [[:->async :enter]] expected-log [[:->async :leave]])
+           [res _] (alts! [(ix/execute ixs {::ix/trace []})
+                           (async/timeout 10)])]
+       (is (map? res))
+       (is (= the-exception (::error res)))
+       (is (= expected-log (::ix/trace res)))))))
+
 (deftest async-lost-context-triggers-exception
   (go-test
-   (let [the-exception (ex-info "the exception" {})
-         ixs [capture-ix {:name :loser
+   (let [ixs [capture-ix {:name :loser
                           :enter (constantly (doto (async/chan)
                                                async/close!))}]
          expected-log [[:capture :enter]
@@ -183,11 +216,11 @@
              capture-ix
              {:name :thrower :leave (fn [_] (throw the-exception))}]
         expected-log [[:ix :enter]
-	              [:capture :enter]
-	              [:thrower :enter]
-	              [:thrower :leave]
-	              [:capture :error]
-	              [:ix :leave]]]
+                      [:capture :enter]
+                      [:thrower :enter]
+                      [:thrower :leave]
+                      [:capture :error]
+                      [:ix :leave]]]
     (let [res (ix/execute ixs {::ix/trace []})]
       (is (not (contains? res ::ix/error)))
       (is (= expected-log (::ix/trace res))))
