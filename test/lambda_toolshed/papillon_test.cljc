@@ -36,10 +36,10 @@
       (is (= (::ix/queue ctx) (apply conj ixs ixs2))))))
 
 (deftest clear-queue
-  (testing "removes the queue key from the context"
+  (testing "clears the context's queue"
     (let [ixs [{:enter identity}]
           ctx (ix/clear-queue (ix/enqueue {} ixs))]
-      (is (not (contains? ctx ::ix/queue))))))
+      (is (empty? (ctx ::ix/queue))))))
 
 (deftest allows-for-empty-chain-of-interceptors
   (is (= {::ix/queue #?(:clj clojure.lang.PersistentQueue/EMPTY
@@ -178,6 +178,30 @@
        (is (= the-exception (::error res)))
        (is (= expected-log (::ix/trace res)))))))
 
+(deftest lost-context-triggers-exception
+  (let [ixs [capture-ix {:name :loser
+                         :enter (constantly nil)}]
+        expected-log [[:capture :enter]
+                      [:loser :enter]
+                      [:loser :error]
+                      [:capture :error]]
+        res (ix/execute ixs {::ix/trace []})]
+    (is (= expected-log (::ix/trace res)))
+    (is (= "Context was lost!" (ex-message (res ::error))))
+    (go-test
+     (let [ixs [capture-ix {:name :loser
+                            :enter (constantly (doto (async/chan)
+                                                 async/close!))}]
+           expected-log [[:capture :enter]
+                         [:loser :enter]
+                         [:loser :error]
+                         [:capture :error]]
+           [res _] (alts! [(ix/execute ixs {::ix/trace []})
+                           (async/timeout 10)])]
+       (is (map? res))
+       (is (= "Context was lost!" (ex-message (res ::error))))
+       (is (= expected-log (::ix/trace res)))))))
+
 (deftest error-chain-is-invoked-when-leave-asynchronously-returns-an-exception
   (let [the-exception (ex-info "the exception" {})
         ixs [capture-ix
@@ -194,21 +218,6 @@
        (is (map? res))
        (is (= the-exception (::error res)))
        (is (= expected-log (::ix/trace res)))))))
-
-(deftest async-lost-context-triggers-exception
-  (go-test
-   (let [ixs [capture-ix {:name :loser
-                          :enter (constantly (doto (async/chan)
-                                               async/close!))}]
-         expected-log [[:capture :enter]
-                       [:loser :enter]
-                       [:loser :error]
-                       [:capture :error]]
-         [res _] (alts! [(ix/execute ixs {::ix/trace []})
-                         (async/timeout 10)])]
-     (is (map? res))
-     (is (= "Context channel was closed." (ex-message (res ::error))))
-     (is (= expected-log (::ix/trace res))))))
 
 (deftest leave-chain-is-resumed-when-error-processor-removes-error-key
   (let [the-exception (ex-info "the exception" {})
