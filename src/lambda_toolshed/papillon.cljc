@@ -29,18 +29,26 @@
   [ctx]
   (update ctx ::queue empty))
 
+(defn- context? [obj] (= (-> obj meta :type) ::ctx))
+
 (defn- transition
   "Transition the context `ctx` to the candidate context value `candidate`.  This function
   works synchronously with value candidates -any async processing should be performed prior
   to invoking this function."
-  [ctx candidate]
+  [ctx candidate-ctx]
   (cond
-    (reduced? candidate) (clear-queue (transition ctx (unreduced candidate)))
-    (error? candidate) (assoc (clear-queue ctx) ::error candidate)
-    (not= (-> candidate meta :type) ::ctx) (assoc (clear-queue ctx)
-                                                  ::error (ex-info "Context was lost!"
-                                                                   {::ctx ctx ::candidate-ctx candidate}))
-    :else candidate))
+    (-> candidate-ctx reduced?) (-> ctx
+                                    (transition (unreduced candidate-ctx))
+                                    clear-queue)
+    (-> candidate-ctx error?) (-> ctx
+                                  (assoc ::error candidate-ctx)
+                                  clear-queue)
+    (-> candidate-ctx context? not) (-> ctx
+                                        (assoc ::error (ex-info "Context was lost!"
+                                                                {::ctx ctx
+                                                                 ::candidate-ctx candidate-ctx}))
+                                        clear-queue)
+    :else candidate-ctx))
 
 (defn- try-stage
   "Try to invoke the stage function at the `stage` key of the interceptor `ix`
@@ -105,8 +113,9 @@
   "Inialize the given context `ctx` with the necessary data structures to
   process the interceptor chain `ixs`."
   [ctx ixs]
-  (-> (assoc (enqueue ctx ixs)
-             ::stack [])
+  (-> ctx
+      (enqueue ixs)
+      (assoc ::stack [])
       (vary-meta assoc :type ::ctx)))
 
 (defn- present-sync
