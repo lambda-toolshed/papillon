@@ -58,12 +58,11 @@
 ;; More complex debugging functionality, that shows that since the queue
 ;; and the stack are on the context, one can use that to their advantage
 (letfn [(describe-interceptor [ix] (or (:name ix) ix))
-        (prettify-interceptors [ixs] (map describe-interceptor ixs))
-        (prettify-queue [ixs] (into-queue (prettify-interceptors ixs)))
-        (prettify-keys [ctx & {:as opts}] (reduce (fn [accum [k f]] (update accum k f))  ctx opts))
+        (prettify [ixs] (into (empty ixs) (map describe-interceptor) ixs))
+        (prettify-keys [ctx & ks] (reduce (fn [accum k] (update accum k prettify)) ctx ks))
         (prettify-ctx [ctx] (prettify-keys ctx
-                                           :lambda-toolshed.papillon/queue prettify-queue
-                                           :lambda-toolshed.papillon/stack prettify-interceptors))
+                                           :lambda-toolshed.papillon/queue
+                                           :lambda-toolshed.papillon/stack))
         (make-debugger [stage] (fn [ctx]
                                  (clojure.pprint/pprint (str "Debug:: stage" stage))
                                  (clojure.pprint/pprint (prettify-ctx ctx))

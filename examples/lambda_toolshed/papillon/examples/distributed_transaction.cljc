@@ -1,6 +1,6 @@
 (ns lambda-toolshed.papillon.examples.distributed-transaction
   (:require
-   [lambda-toolshed.papillon :as papillon :refer [into-queue]]
+   [lambda-toolshed.papillon :as papillon]
    [clojure.core.async :as async :refer [go put! <! >! chan]]
    [clojure.pprint :as pp]))
 
@@ -57,12 +57,10 @@
   interceptor to process, and removes the current interceptor
   from the stack to avoid dual attempts at cleanup."
   [ctx]
-  (let [stack (:lambda-toolshed.papillon/stack ctx)
-        current-as-queue (into-queue [(peek stack)])
-        new-stack (pop stack)]
+  (let [stack (:lambda-toolshed.papillon/stack ctx)]
     (-> ctx
-        (update-in [:lambda-toolshed.papillon/queue] #(into-queue current-as-queue %))
-        (assoc :lambda-toolshed.papillon/stack new-stack))))
+        (update :lambda-toolshed.papillon/queue #(into (empty %) (concat [(peek stack)] %)))
+        (update :lambda-toolshed.papillon/stack pop))))
 
 (defn- retry!
   "This handler will retry a request until it hits the retry limit.

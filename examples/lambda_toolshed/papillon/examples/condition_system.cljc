@@ -1,6 +1,6 @@
 (ns lambda-toolshed.papillon.examples.condition-system
   (:require
-   [lambda-toolshed.papillon :as papillon :refer [execute into-queue]]
+   [lambda-toolshed.papillon :as papillon :refer [execute]]
    [clojure.core.async :as async :refer [go <!]]
    clojure.pprint))
 
@@ -31,12 +31,10 @@
   interceptor to process, and removes the current interceptor
   from the stack to avoid dual attempts at cleanup."
   [ctx]
-  (let [stack (:lambda-toolshed.papillon/stack ctx)
-        current-as-queue (into-queue [(peek stack)])
-        new-stack (pop stack)]
+  (let [stack (:lambda-toolshed.papillon/stack ctx)]
     (-> ctx
-        (update-in [:lambda-toolshed.papillon/queue] #(into-queue current-as-queue %))
-        (assoc :lambda-toolshed.papillon/stack new-stack))))
+        (update :lambda-toolshed.papillon/queue #(into (empty %) (concat [(peek stack)] %)))
+        (update :lambda-toolshed.papillon/stack pop))))
 
 ;; basic interceptor for examples
 (def one-ix
@@ -49,7 +47,7 @@
    :enter (fn [ctx] (update-in ctx [:number] (partial * 2)))})
 
 ;; make sure that requeue current looks good at a simple version
-(-> {:lambda-toolshed.papillon/queue (into-queue [double-ix])
+(-> {:lambda-toolshed.papillon/queue (into clojure.lang.PersistentQueue/EMPTY [double-ix])
      :lambda-toolshed.papillon/stack [one-ix]}
     requeue-current)
 

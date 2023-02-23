@@ -1,6 +1,6 @@
 (ns lambda-toolshed.papillon.examples.dynamic-tracing
   (:require
-   [lambda-toolshed.papillon :as papillon :refer [execute into-queue]]
+   [lambda-toolshed.papillon :as papillon :refer [execute]]
    [clojure.core.async :as async :refer [go <! >! chan]]
    clojure.pprint))
 
@@ -51,7 +51,7 @@
    :enter (fn [ctx]
             (if debug
               (let [queue (:lambda-toolshed.papillon/queue ctx)
-                    new-queue (into-queue (map wrap-with-timing queue))]
+                    new-queue (into (empty queue) (map wrap-with-timing) queue)]
                 (assoc ctx :lambda-toolshed.papillon/queue new-queue))
               ctx))})
 
