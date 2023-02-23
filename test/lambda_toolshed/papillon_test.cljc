@@ -161,21 +161,29 @@
        (is (= the-exception (::error res)))
        (is (= expected-log (::ix/trace res)))))))
 
-(deftest async-lost-context-triggers-exception
-  (go-test
-   (let [the-exception (ex-info "the exception" {})
-         ixs [capture-ix {:name :loser
-                          :enter (constantly (doto (async/chan)
-                                               async/close!))}]
-         expected-log [[:capture :enter]
-                       [:loser :enter]
-                       [:loser :error]
-                       [:capture :error]]
-         [res _] (alts! [(ix/execute ixs {::ix/trace []})
-                         (async/timeout 10)])]
-     (is (map? res))
-     (is (= "Context was lost!" (ex-message (res ::error))))
-     (is (= expected-log (::ix/trace res))))))
+(deftest lost-context-triggers-exception
+  (let [ixs [capture-ix {:name :loser
+                         :enter (constantly nil)}]
+        expected-log [[:capture :enter]
+                      [:loser :enter]
+                      [:loser :error]
+                      [:capture :error]]
+        res (ix/execute ixs {::ix/trace []})]
+    (is (= expected-log (::ix/trace res)))
+    (is (= "Context was lost!" (ex-message (res ::error))))
+    (go-test
+     (let [ixs [capture-ix {:name :loser
+                            :enter (constantly (doto (async/chan)
+                                                 async/close!))}]
+           expected-log [[:capture :enter]
+                         [:loser :enter]
+                         [:loser :error]
+                         [:capture :error]]
+           [res _] (alts! [(ix/execute ixs {::ix/trace []})
+                           (async/timeout 10)])]
+       (is (map? res))
+       (is (= "Context was lost!" (ex-message (res ::error))))
+       (is (= expected-log (::ix/trace res)))))))
 
 (deftest leave-chain-is-resumed-when-error-processor-removes-error-key
   (let [the-exception (ex-info "the exception" {})
