@@ -6,16 +6,9 @@
    #?@(:cljs ([goog.string :as gstring]
               goog.string.format))))
 
-(defn into-queue
-  ([xs]
-   (into-queue nil xs))
-  ([q xs]
-   ((fnil into #?(:clj clojure.lang.PersistentQueue/EMPTY
-                  :cljs cljs.core/PersistentQueue.EMPTY)) q xs)))
-
 (defn enqueue
   [ctx ixs]
-  (update-in ctx [::queue] into-queue ixs))
+  (update ctx ::queue into ixs))
 
 (defn- error?
   "Is the given value `x` an exception?"
@@ -114,9 +107,11 @@
   process the interceptor chain `ixs`."
   [ctx ixs]
   (-> ctx
-      (enqueue ixs)
+      (assoc ::queue #?(:clj clojure.lang.PersistentQueue/EMPTY
+                        :cljs cljs.core/PersistentQueue.EMPTY))
       (assoc ::stack [])
-      (vary-meta assoc :type ::ctx)))
+      (vary-meta assoc :type ::ctx)
+      (enqueue ixs)))
 
 (defn- present-sync
   [result]
