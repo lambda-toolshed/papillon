@@ -1,6 +1,6 @@
 (ns lambda-toolshed.papillon.examples.example
   (:require
-   [lambda-toolshed.papillon :as papillon :refer [enqueue execute into-queue]]
+   [lambda-toolshed.papillon :as papillon :refer [enqueue execute]]
    [clojure.core.async :as async :refer [go <! >! chan]]
    clojure.pprint))
 
