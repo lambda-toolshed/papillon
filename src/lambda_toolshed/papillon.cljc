@@ -2,7 +2,7 @@
   (:require #?@(:cljs ([goog.string :as gstring]
                        goog.string.format))
             #?(:org.babashka/nbb []
-               :default [clojure.core.async :refer [close! chan go >!]])
+               :default [clojure.core.async :refer [chan go put!]])
             [lambda-toolshed.papillon.async :refer [Chrysalis eclose]]
             [lambda-toolshed.papillon.util :refer [error?]]))
 
@@ -114,13 +114,29 @@
     result))
 
 (defn- present-async
-  [on-complete on-error result]
+  [result presenter]
   (if (satisfies? Chrysalis result)
-    (eclose result (partial present-async on-complete on-error))
-    (do
-      (if-let [error (::error result)]
-        (on-error error)
-        (on-complete result)))))
+    (eclose result #(present-async % presenter))
+    (presenter result)))
+
+#?(:cljs
+   (defn present-promise [candidate]
+     (js/Promise. (fn [resolve reject]
+                    (let [presenter (fn [ctx]
+                                      (if-let [err (::error ctx)]
+                                        (reject err)
+                                        (resolve ctx)))]
+                      (present-async candidate presenter))))))
+
+#?(:org.babashka/nbb nil
+   :default
+   (defn present-channel [candidate]
+     (let [c (chan 1)
+           presenter (fn [result]
+                       (put! c (or (::error result) result)))]
+       (go
+         (present-async candidate presenter))
+       c)))
 
 (defn- namer [i ix]
   (if (:name ix)
@@ -159,21 +175,11 @@
      by the chain)."
   ([ixs]
    (execute ixs {}))
-  #?(:org.babashka/nbb nil
-     :default
-     ([ixs ctx]
-      (let [c (chan 1)
-            handle  (fn [x] (go (>! c x)))
-            result (execute ixs ctx handle handle)]
-        (if (satisfies? Chrysalis result)
-          c
-          (do
-            (close! c)
-            result)))))
-  ([ixs ctx on-complete on-error]
+  ([ixs ctx]
    (let [ixs (map-indexed namer ixs)
          ctx (init-ctx ctx ixs)
+         present-async (::present-async ctx #?(:org.babashka/nbb present-promise :default present-channel))
          result (leave (enter ctx))]
      (if (satisfies? Chrysalis result)
-       (present-async on-complete on-error result)
+       (present-async result)
        (present-sync result)))))
