@@ -3,8 +3,11 @@
                        goog.string.format))
             #?(:org.babashka/nbb []
                :default [clojure.core.async :refer [chan go put!]])
-            [lambda-toolshed.papillon.async :refer [Chrysalis eclose]]
+            [lambda-toolshed.papillon.async :refer [Chrysalis emerge]]
             [lambda-toolshed.papillon.util :refer [error?]]))
+
+(defn async? [x]
+  (satisfies? Chrysalis x))
 
 (defn enqueue
   [ctx ixs]
@@ -51,8 +54,8 @@
         f (or (stage ix) identity)]
     (try
       (let [res (f ctx)]
-        (if (satisfies? Chrysalis res)
-          (eclose res (partial transition ctx))
+        (if (async? res)
+          (emerge res (partial transition ctx))
           (transition ctx res)))
       (catch #?(:clj Throwable :cljs :default) err
         (transition ctx err)))))
@@ -70,8 +73,8 @@
   channel, but continues until it gets a non-ReadPort value for the
   context."
   [ctx]
-  (if (satisfies? Chrysalis ctx)
-    (eclose ctx enter)
+  (if (async? ctx)
+    (emerge ctx enter)
     (if-let [ix (peek (::queue ctx))]
       (recur (-> ctx
                  (update ::queue pop)
@@ -88,8 +91,8 @@
   context if you handle the error.  This will stop processing the `:error` chain
   and start processing the `:leave` chain in the stack of interceptors."
   [ctx]
-  (if (satisfies? Chrysalis ctx)
-    (eclose ctx leave)
+  (if (async? ctx)
+    (emerge ctx leave)
     (if-let [ix (peek (::stack ctx))]
       (recur (-> ctx
                  (update ::stack pop)
@@ -115,8 +118,8 @@
 
 (defn- present-async
   [result presenter]
-  (if (satisfies? Chrysalis result)
-    (eclose result #(present-async % presenter))
+  (if (async? result)
+    (emerge result #(present-async % presenter))
     (presenter result)))
 
 #?(:cljs
@@ -180,6 +183,6 @@
          ctx (init-ctx ctx ixs)
          present-async (::present-async ctx #?(:org.babashka/nbb present-promise :default present-channel))
          result (leave (enter ctx))]
-     (if (satisfies? Chrysalis result)
+     (if (async? result)
        (present-async result)
        (present-sync result)))))

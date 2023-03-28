@@ -1,13 +1,13 @@
 (ns lambda-toolshed.papillon.async)
 
 (defprotocol Chrysalis
-  (eclose [this handler]))
+  (emerge [this handler]))
 
 #?(:cljs
    (do
      (extend-type js/Promise
        Chrysalis
-       (eclose [this handler]
+       (emerge [this handler]
          (-> this
              (.catch (fn [err] err))
              (.then handler))))))

@@ -7,7 +7,7 @@
  #?(:clj  clojure.core.async.impl.protocols.Channel
     :cljs cljs.core.async.impl.channels/ManyToManyChannel)
   Chrysalis
-  (eclose [this handler]
+  (emerge [this handler]
     (go
       (let [x (<! this)]
         (handler (cond
