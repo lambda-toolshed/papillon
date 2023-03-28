@@ -1,10 +1,12 @@
 (ns lambda-toolshed.papillon-test
   (:require
+   #?(:cljs
+      [cljs.core.async.interop :refer [<p!]])
    [clojure.core.async :as async :refer [alts! go]]
    [clojure.test :refer [deftest is testing]]
    [lambda-toolshed.papillon :as ix]
    [lambda-toolshed.papillon.async.core_async]
-   [lambda-toolshed.test-utils :refer [go-test runt! runt-fn!] :include-macros true]))
+   [lambda-toolshed.test-utils :refer [go-test] :include-macros true]))
 
 (def ^:private capture-ix
   {:name :capture
@@ -14,8 +16,8 @@
                 (assoc ::error error)))})
 
 (defn ->async
-  [itx]
   "Convert the synchronous interceptor `itx` to the async equivalent"
+  [itx]
   (-> itx
       (update :enter #(when % (fn [ctx] (async/go (% ctx)))))
       (update :leave #(when % (fn [ctx] (async/go (% ctx)))))
@@ -302,4 +304,20 @@
           (is (empty? (::ix/queue res)))
           (is (empty? (::ix/stack res)))
           (is (= (ex-message the-exception) (ex-message (res ::error))))
+          (is (= expected-log (::ix/trace res))))))))
+
+#?(:cljs
+   (deftest allows-for-presenting-as-a-promise
+     (let [ixs [{:name :ix}
+                {:name :promiser :enter (fn [x] (js/Promise.resolve x))}]
+           ctx {::ix/trace []
+                ::ix/present-async ix/present-promise}
+           expected-log [[:ix :enter] [:promiser :enter] [:promiser :leave] [:ix :leave]]]
+       (go-test
+        (let [res (<p! (js/Promise.race [(ix/execute ixs ctx)
+                                         (js/Promise. (fn [_resolve reject]
+                                                        (js/setTimeout reject 10 (ex-info "timed out" {}))))]))]
+          (is (map? res))
+          (is (empty? (::ix/queue res)))
+          (is (empty? (::ix/stack res)))
           (is (= expected-log (::ix/trace res))))))))
