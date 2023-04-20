@@ -204,8 +204,3 @@ By giving a contract for the interceptor and interceptor execution one could imp
 Because you have visibility to the stack and the queue, as they are keys in the context map, you could walk up the stack looking for interceptors that have the key that was received as a "signal", and invoke a function associated with that key to attempt to handle the signal.  This allows you to unwind the stack, without unwinding the stack, because, as long as you don't return the modified context, you are working on a persistent data structure, and any modifications to the stack are a copy of the stack scoped to your usage.  Persistent Data Structures FOR THE WIN!!
 
 A basic example of this can be found in [examples/condition_system.cljc](./examples/condition_system.cljc), along with and advanced condition system that uses derived keywords, and the derivation hierarchy of a keyword signal.
-
-## Sponsored by Guaranteed Rate
-
-![Guaranteed Rate](https://mx-images.guaranteedrate.com/gr-2color.png)
-
