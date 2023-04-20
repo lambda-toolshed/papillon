@@ -1,23 +1,19 @@
 (ns lambda-toolshed.papillon
   (:require
-   [clojure.core.async :refer [<! go go-loop take! put! chan]]
-   [clojure.core.async.impl.protocols :refer [ReadPort]]
-   [lambda-toolshed.papillon.async]
+   [lambda-toolshed.papillon.async :refer [Chrysalis emerge]]
+   [lambda-toolshed.papillon.util :refer [error?]]
    #?@(:cljs ([goog.string :as gstring]
               goog.string.format))))
 
 (def fmt
   #?(:clj format :cljs gstring/format))
 
+(defn- async? [x]
+  (satisfies? Chrysalis x))
+
 (defn enqueue
   [ctx ixs]
   (update ctx ::queue into ixs))
-
-(defn- error?
-  "Is the given value `x` an exception?"
-  [x]
-  #?(:clj (instance? Throwable x)
-     :cljs (instance? js/Error x)))
 
 (defn clear-queue
   "Empty the interceptor queue of the given context `ctx`, thus ensuring no
@@ -31,10 +27,10 @@
   "Transition the context `ctx` to the candidate context value `candidate`.  This function
   works synchronously with value candidates -any async processing should be performed prior
   to invoking this function."
-  [ctx candidate-ctx tag]
+  [ctx tag candidate-ctx]
   (cond
     (-> candidate-ctx reduced?) (-> ctx
-                                    (transition (unreduced candidate-ctx) tag)
+                                    (transition tag (unreduced candidate-ctx))
                                     clear-queue)
     (-> candidate-ctx error?) (-> ctx
                                   (assoc ::error candidate-ctx)
@@ -62,11 +58,11 @@
     (let [f (or (stage ix) identity)]
       (try
         (let [res (f ctx)]
-          (if (satisfies? ReadPort res)
-            (go (transition ctx (<! res) tag))
-            (transition ctx res tag)))
+          (if (async? res)
+            (emerge res (partial transition ctx tag))
+            (transition ctx tag res)))
         (catch #?(:clj Throwable :cljs :default) err
-          (transition ctx err tag))))))
+          (transition ctx tag err))))))
 
 (defn- enter
   "Run the queued enter chain in the given context `ctx`.  If the
@@ -81,8 +77,8 @@
   channel, but continues until it gets a non-ReadPort value for the
   context."
   [ctx]
-  (if (satisfies? ReadPort ctx)
-    (go (enter (<! ctx)))
+  (if (async? ctx)
+    (emerge ctx enter)
     (if-let [ix (peek (::queue ctx))]
       (recur (-> ctx
                  (update ::queue pop)
@@ -99,8 +95,8 @@
   context if you handle the error.  This will stop processing the `:error` chain
   and start processing the `:leave` chain in the stack of interceptors."
   [ctx]
-  (if (satisfies? ReadPort ctx)
-    (go (leave (<! ctx)))
+  (if (async? ctx)
+    (emerge ctx leave)
     (if-let [ix (peek (::stack ctx))]
       (recur (-> ctx
                  (update ::stack pop)
@@ -126,10 +122,9 @@
 
 (defn- present-async
   [result]
-  (go-loop [ctx result]
-    (if (satisfies? ReadPort ctx)
-      (recur (<! ctx))
-      (or (::error ctx) ctx))))
+  (if (async? result)
+    (emerge result present-async)
+    (or (::error result) result)))
 
 (defn- namer [i ix]
   (if (:name ix)
@@ -171,6 +166,6 @@
    (let [ixs (map-indexed namer ixs)
          ctx (init-ctx ctx ixs)
          result (leave (enter ctx))]
-     (if (satisfies? ReadPort result)
+     (if (async? result)
        (present-async result)
        (present-sync result)))))

@@ -1,6 +1,7 @@
 (ns lambda-toolshed.papillon.examples.dynamic-tracing
   (:require
    [lambda-toolshed.papillon :as papillon :refer [execute]]
+   [lambda-toolshed.papillon.async.core-async]
    [clojure.core.async :as async :refer [go <! >! chan]]
    clojure.pprint))
 
