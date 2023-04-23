@@ -1,20 +1,17 @@
 (ns lambda-toolshed.papillon
-  (:require
-   [clojure.core.async :refer [<! go go-loop take! put! chan]]
-   [clojure.core.async.impl.protocols :refer [ReadPort]]
-   [lambda-toolshed.papillon.async]
-   #?@(:cljs ([goog.string :as gstring]
-              goog.string.format))))
+  (:require #?@(:cljs ([goog.string :as gstring]
+                       goog.string.format))
+            #?(:org.babashka/nbb []
+               :default [clojure.core.async :refer [chan go put!]])
+            [lambda-toolshed.papillon.async :refer [Chrysalis emerge]]
+            [lambda-toolshed.papillon.util :refer [error?]]))
+
+(defn async? [x]
+  (satisfies? Chrysalis x))
 
 (defn enqueue
   [ctx ixs]
   (update ctx ::queue into ixs))
-
-(defn- error?
-  "Is the given value `x` an exception?"
-  [x]
-  #?(:clj (instance? Throwable x)
-     :cljs (instance? js/Error x)))
 
 (defn clear-queue
   "Empty the interceptor queue of the given context `ctx`, thus ensuring no
@@ -53,15 +50,15 @@
   [{trace ::trace :as ctx} ix stage]
   (let [ctx (if trace
               (update ctx ::trace conj [(or (:name ix) (-> ix meta :name)) stage])
-              ctx)]
-    (let [f (or (stage ix) identity)]
-      (try
-        (let [res (f ctx)]
-          (if (satisfies? ReadPort res)
-            (go (transition ctx (<! res)))
-            (transition ctx res)))
-        (catch #?(:clj Throwable :cljs :default) err
-          (transition ctx err))))))
+              ctx)
+        f (or (stage ix) identity)]
+    (try
+      (let [res (f ctx)]
+        (if (async? res)
+          (emerge res (partial transition ctx))
+          (transition ctx res)))
+      (catch #?(:clj Throwable :cljs :default) err
+        (transition ctx err)))))
 
 (defn- enter
   "Run the queued enter chain in the given context `ctx`.  If the
@@ -76,8 +73,8 @@
   channel, but continues until it gets a non-ReadPort value for the
   context."
   [ctx]
-  (if (satisfies? ReadPort ctx)
-    (go (enter (<! ctx)))
+  (if (async? ctx)
+    (emerge ctx enter)
     (if-let [ix (peek (::queue ctx))]
       (recur (-> ctx
                  (update ::queue pop)
@@ -94,8 +91,8 @@
   context if you handle the error.  This will stop processing the `:error` chain
   and start processing the `:leave` chain in the stack of interceptors."
   [ctx]
-  (if (satisfies? ReadPort ctx)
-    (go (leave (<! ctx)))
+  (if (async? ctx)
+    (emerge ctx leave)
     (if-let [ix (peek (::stack ctx))]
       (recur (-> ctx
                  (update ::stack pop)
@@ -120,11 +117,29 @@
     result))
 
 (defn- present-async
-  [result]
-  (go-loop [ctx result]
-    (if (satisfies? ReadPort ctx)
-      (recur (<! ctx))
-      (or (::error ctx) ctx))))
+  [result presenter]
+  (if (async? result)
+    (emerge result #(present-async % presenter))
+    (presenter result)))
+
+#?(:cljs
+   (defn present-promise [candidate]
+     (js/Promise. (fn [resolve reject]
+                    (let [presenter (fn [ctx]
+                                      (if-let [err (::error ctx)]
+                                        (reject err)
+                                        (resolve ctx)))]
+                      (present-async candidate presenter))))))
+
+#?(:org.babashka/nbb nil
+   :default
+   (defn present-channel [candidate]
+     (let [c (chan 1)
+           presenter (fn [result]
+                       (put! c (or (::error result) result)))]
+       (go
+         (present-async candidate presenter))
+       c)))
 
 (defn- namer [i ix]
   (if (:name ix)
@@ -166,7 +181,8 @@
   ([ixs ctx]
    (let [ixs (map-indexed namer ixs)
          ctx (init-ctx ctx ixs)
+         present-async (::present-async ctx #?(:org.babashka/nbb present-promise :default present-channel))
          result (leave (enter ctx))]
-     (if (satisfies? ReadPort result)
+     (if (async? result)
        (present-async result)
        (present-sync result)))))
