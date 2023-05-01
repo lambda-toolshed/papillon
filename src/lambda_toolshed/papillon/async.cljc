@@ -1,11 +1,43 @@
-(ns lambda-toolshed.papillon.async
-  #?(:cljs
-     (:require [clojure.core.async :as core.async]
-               [clojure.core.async.impl.protocols :refer [ReadPort]]
-               [cljs.core.async.interop :as core.async.interop :refer [p->c]])))
+(ns lambda-toolshed.papillon.async)
 
 (defprotocol Chrysalis
-  (emerge [this handler]))
+  "Protocol for a candidate context object, to allow for uniform handling between synchronous and asynchronous interceptor results."
+  (emerge [this handler] "Unwraps the potentially deferred computation represented by `this` and passes it to the `handler`."))
+
+(extend-protocol Chrysalis
+  nil
+  (emerge [this handler]
+    (handler this)))
+
+#?(:clj
+   (extend-protocol Chrysalis
+     clojure.lang.Reduced
+     (emerge [this handler]
+       (handler this))))
+
+#?(:cljs
+   (extend-protocol Chrysalis
+     Reduced
+     (emerge [this handler]
+       (handler this))))
+
+#?(:clj
+   (extend-protocol Chrysalis
+     clojure.lang.IDeref
+     (emerge [this handler]
+       (handler @this))))
+
+#?(:clj
+   (extend-protocol Chrysalis
+     Object
+     (emerge [this handler]
+       (handler this))))
+
+#?(:cljs
+   (extend-protocol Chrysalis
+     object
+     (emerge [this handler]
+       (handler this))))
 
 #?(:cljs
    (do

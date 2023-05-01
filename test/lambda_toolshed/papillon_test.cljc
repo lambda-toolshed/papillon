@@ -1,6 +1,7 @@
 (ns lambda-toolshed.papillon-test
   (:require
    #?(:cljs [cljs.core.async.interop :refer [p->c]])
+   #?(:cljs [lambda-toolshed.papillon.util :refer [error?]])
    [clojure.core.async :as async :refer [alts! go]]
    [clojure.test :refer [deftest is testing]]
    [lambda-toolshed.papillon :as ix]
@@ -303,3 +304,14 @@
           (is (empty? (::ix/stack res)))
           (is (= (ex-message the-exception) (ex-message (res ::error))))
           (is (= expected-log (::ix/trace res))))))))
+
+#?(:cljs
+   (deftest allows-for-presenting-rejected-promise
+     (let [the-exception (ex-info "the exception" {})
+           ixs [{:name :ix}
+                {:name :promise-rejector :enter (fn [_] (js/Promise.reject the-exception))}]]
+       (go-test
+        (let [[res _] (alts! [(p->c (ix/execute ixs {::ix/trace []}))
+                              (async/timeout 10)])]
+          (is (error? res))
+          (is (= (ex-message the-exception) (ex-message (ex-cause res)))))))))

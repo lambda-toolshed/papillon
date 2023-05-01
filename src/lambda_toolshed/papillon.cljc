@@ -43,6 +43,9 @@
                                         clear-queue)
     :else candidate-ctx))
 
+(declare enter)
+(declare leave)
+
 (defn- try-stage
   "Try to invoke the stage function at the `stage` key of the interceptor `ix`
   with the context `ctx` and return the result.  If there is no value at the
@@ -54,15 +57,16 @@
   (let [tag [(or (:name ix) (-> ix meta :name)) stage]
         ctx (if trace
               (update ctx ::trace conj tag)
-              ctx)]
-    (let [f (or (stage ix) identity)]
-      (try
-        (let [res (f ctx)]
-          (if (async? res)
-            (emerge res (partial transition ctx tag))
-            (transition ctx tag res)))
-        (catch #?(:clj Throwable :cljs :default) err
-          (transition ctx tag err))))))
+              ctx)
+        f (or (stage ix) identity)]
+    (try
+      (let [res (f ctx)]
+        (emerge res (fn [candidate-ctx]
+                      (let [new-ctx (transition ctx tag candidate-ctx)
+                            next-stage (if (and (not (contains? new-ctx ::error)) (peek (::queue new-ctx))) enter leave)]
+                        (next-stage new-ctx)))))
+      (catch #?(:clj Throwable :cljs :default) err
+        (leave (transition ctx tag err))))))
 
 (defn- enter
   "Run the queued enter chain in the given context `ctx`.  If the
@@ -77,14 +81,12 @@
   channel, but continues until it gets a non-ReadPort value for the
   context."
   [ctx]
-  (if (async? ctx)
-    (emerge ctx enter)
-    (if-let [ix (peek (::queue ctx))]
-      (recur (-> ctx
-                 (update ::queue pop)
-                 (update ::stack conj ix)
-                 (try-stage ix :enter)))
-      ctx)))
+  (if-let [ix (peek (::queue ctx))]
+    (-> ctx
+        (update ::queue pop)
+        (update ::stack conj ix)
+        (try-stage ix :enter))
+    ctx))
 
 (defn- leave
   "Runs the stacked `:leave` chain or `:error` chain in the given context `ctx`.
@@ -95,13 +97,11 @@
   context if you handle the error.  This will stop processing the `:error` chain
   and start processing the `:leave` chain in the stack of interceptors."
   [ctx]
-  (if (async? ctx)
-    (emerge ctx leave)
-    (if-let [ix (peek (::stack ctx))]
-      (recur (-> ctx
-                 (update ::stack pop)
-                 (try-stage ix (if (::error ctx) :error :leave))))
-      ctx)))
+  (if-let [ix (peek (::stack ctx))]
+    (-> ctx
+        (update ::stack pop)
+        (try-stage ix (if (::error ctx) :error :leave)))
+    ctx))
 
 (defn- init-ctx
   "Inialize the given context `ctx` with the necessary data structures to
@@ -114,17 +114,11 @@
       (vary-meta assoc :type ::ctx)
       (enqueue ixs)))
 
-(defn- present-sync
+(defn- present
   [result]
   (if-let [error (::error result)]
     (throw error)
     result))
-
-(defn- present-async
-  [result]
-  (if (async? result)
-    (emerge result present-async)
-    (or (::error result) result)))
 
 (defn- namer [i ix]
   (if (:name ix)
@@ -165,7 +159,5 @@
   ([ixs ctx]
    (let [ixs (map-indexed namer ixs)
          ctx (init-ctx ctx ixs)
-         result (leave (enter ctx))]
-     (if (async? result)
-       (present-async result)
-       (present-sync result)))))
+         result (enter ctx)]
+     (emerge result present))))

@@ -14,4 +14,7 @@
       (let [x (<! res)]
         (if (satisfies? ReadPort x)
           (recur x)
-          (handler x))))))
+          (try
+            (handler x)
+            (catch #?(:clj Throwable :cljs :default) err
+              err)))))))
