@@ -44,6 +44,13 @@
      (extend-type js/Promise
        Chrysalis
        (emerge [this handler]
-         (-> this
-             (.catch identity)
-             (.then handler))))))
+         (js/Promise. (fn [resolve reject]
+                        (let [wrapped-handler (fn [x]
+                                                (try
+                                                  (let [res (handler x)]
+                                                    (resolve res)
+                                                    res)
+                                                  (catch :default err
+                                                    (reject err)
+                                                    err)))]
+                          (.then this #(emerge % wrapped-handler) #(emerge % wrapped-handler)))))))))
