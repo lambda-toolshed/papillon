@@ -25,7 +25,11 @@
    (extend-protocol Chrysalis
      clojure.lang.IDeref
      (emerge [this handler]
-       (handler @this))))
+       (let [p (promise)
+             wrapped-handler (fn wrapped-handler [x]
+                               (deliver p (handler x)))]
+         (emerge @this wrapped-handler)
+         @p))))
 
 #?(:clj
    (extend-protocol Chrysalis

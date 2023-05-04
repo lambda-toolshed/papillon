@@ -280,9 +280,62 @@
 
 #?(:clj
    (deftest allows-for-future-success-return-values
+     (let [ixs [{:name :futurist :enter (fn [x] (future x))}]
+           expected-log [[:futurist :enter] [:futurist :leave]]]
+       (let [res (ix/execute ixs {::ix/trace []})]
+         (is (map? res))
+         (is (empty? (::ix/queue res)))
+         (is (empty? (::ix/stack res)))
+         (is (= expected-log (::ix/trace res))))
+       (go-test
+        (let [ixs (concat [async-ix] ixs)
+              expected-log (concat [[:->async :enter]] expected-log [[:->async :leave]])
+              [res _] (alts! [(ix/execute ixs {::ix/trace []})
+                              (async/timeout 10)])]
+          (is (map? res))
+          (is (empty? (::ix/queue res)))
+          (is (empty? (::ix/stack res)))
+          (is (= expected-log (::ix/trace res))))))))
+
+#?(:clj
+   (deftest error-chain-is-invoked-when-enter-throws-an-exception-in-a-future
+     (let [the-exception (ex-info "the exception" {})
+           ixs [capture-ix
+                {:name :future-thrower :enter (fn [_] (future (throw the-exception)))}]
+           expected-log [[:capture :enter]
+                         [:future-thrower :enter]
+                         [:future-thrower :error]
+                         [:capture :error]]]
+       (let [res (ix/execute ixs {::ix/trace []})]
+         (is (= the-exception (ex-cause (::error res))))
+         (is (= expected-log (::ix/trace res))))
+       (go-test
+        (let [ixs (concat [async-ix] ixs)
+              expected-log (concat [[:->async :enter]] expected-log [[:->async :leave]])
+              [res _] (alts! [(ix/execute ixs {::ix/trace []})
+                              (async/timeout 10)])]
+          (is (map? res))
+          (is (= the-exception (ex-cause (::error res))))
+          (is (= expected-log (::ix/trace res))))))))
+
+#?(:clj
+   (deftest allows-for-presenting-futures-as-channel
      (let [ixs [async-ix
                 {:name :futurist :enter (fn [x] (future x))}]
            expected-log [[:->async :enter] [:futurist :enter] [:futurist :leave] [:->async :leave]]]
+       (go-test
+        (let [[res _] (alts! [(ix/execute ixs {::ix/trace []})
+                              (async/timeout 10)])]
+          (is (map? res))
+          (is (empty? (::ix/queue res)))
+          (is (empty? (::ix/stack res)))
+          (is (= expected-log (::ix/trace res))))))))
+
+#?(:clj
+   (deftest allows-for-presenting-channels-as-future
+     (let [ixs [{:name :futurist :enter (fn [x] (future x))}
+                async-ix]
+           expected-log [[:futurist :enter] [:->async :enter] [:->async :leave] [:futurist :leave]]]
        (go-test
         (let [[res _] (alts! [(ix/execute ixs {::ix/trace []})
                               (async/timeout 10)])]
