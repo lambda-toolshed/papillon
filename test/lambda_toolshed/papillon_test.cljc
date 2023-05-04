@@ -22,6 +22,10 @@
      (js/Promise. (fn [resolve _reject]
                     (js/setTimeout resolve x "timed out")))))
 
+#?(:cljs
+   (def promiser-ix
+     {:name :promiser :enter (fn [ctx] (js/Promise.resolve ctx))}))
+
 (defn ->async
   "Convert the synchronous interceptor `itx` to the async equivalent"
   [itx]
@@ -161,8 +165,10 @@
     (go-test
      (let [ixs (concat [async-ix] ixs)
            expected-log (concat [[:->async :enter]] expected-log [[:->async :leave]])
-           [res _] (alts! [(ix/execute ixs {::ix/trace []})
+           ix-chan (ix/execute ixs {::ix/trace []})
+           [res c] (alts! [ix-chan
                            (async/timeout 10)])]
+       (is (= ix-chan c))
        (is (map? res))
        (is (= the-exception (::error res)))
        (is (= expected-log (::ix/trace res)))))))
@@ -337,8 +343,10 @@
                 async-ix]
            expected-log [[:futurist :enter] [:->async :enter] [:->async :leave] [:futurist :leave]]]
        (go-test
-        (let [[res _] (alts! [(ix/execute ixs {::ix/trace []})
+        (let [ix-chan (ix/execute ixs {::ix/trace []}) 
+              [res c] (alts! [ix-chan
                               (async/timeout 10)])]
+          (is (= ix-chan c))
           (is (map? res))
           (is (empty? (::ix/queue res)))
           (is (empty? (::ix/stack res)))
@@ -347,7 +355,7 @@
 #?(:cljs
    (deftest allows-for-promise-success-return-values-as-channel
      (let [ixs [async-ix
-                {:name :promiser :enter (fn [x] (js/Promise.resolve x))}]
+                promiser-ix]
            expected-log [[:->async :enter] [:promiser :enter] [:promiser :leave] [:->async :leave]]]
        (go-test
         (let [[res _] (alts! [(ix/execute ixs {::ix/trace []})
@@ -390,9 +398,52 @@
           (is (= (ex-message the-exception) (ex-message res))))))))
 
 #?(:cljs
+   (deftest allows-for-deeply-mixing-promises-and-channels-when-promise-resolves
+     (let [ixs [async-ix
+                promiser-ix
+                async-ix
+                promiser-ix
+                async-ix
+                promiser-ix]
+           expected-log [[:->async :enter]
+                         [:promiser :enter]
+                         [:->async :enter]
+                         [:promiser :enter]
+                         [:->async :enter]
+                         [:promiser :enter]
+                         [:promiser :leave]
+                         [:->async :leave]
+                         [:promiser :leave]
+                         [:->async :leave]
+                         [:promiser :leave]
+                         [:->async :leave]]]
+       (go-test
+        (let [[res _] (alts! [(ix/execute ixs {::ix/trace []})
+                              (async/timeout 10)])]
+          (is (map? res))
+          (is (empty? (::ix/queue res)))
+          (is (empty? (::ix/stack res)))
+          (is (= expected-log (::ix/trace res))))))))
+
+#?(:cljs
+   (deftest allows-for-deeply-mixing-promises-and-channels-when-promise-rejects
+     (let [the-exception (ex-info "the exception" {})
+           ixs [async-ix
+                promiser-ix
+                async-ix
+                promiser-ix
+                async-ix
+                {:name :promise-rejector :enter (fn [_] (js/Promise.reject the-exception))}]]
+       (go-test
+        (let [[res _] (alts! [(ix/execute ixs {::ix/trace []})
+                              (async/timeout 10)])]
+          (is (error? res))
+          (is (= (ex-message the-exception) (ex-message res))))))))
+
+#?(:cljs
    (deftest allows-for-presenting-resolved-promise
      (let [ixs [{:name :ix}
-                {:name :promiser :enter (fn [ctx] (js/Promise.resolve ctx))}]
+                promiser-ix]
            expected-log [[:ix :enter] [:promiser :enter] [:promiser :leave] [:ix :leave]]]
        (test/async
         done
@@ -445,7 +496,7 @@
 #?(:cljs
    (deftest allows-for-presenting-channel-as-resolved-promise
      (let [ixs [{:name :ix}
-                {:name :promiser :enter (fn [ctx] (js/Promise.resolve ctx))}
+                promiser-ix
                 async-ix]
            expected-log [[:ix :enter] [:promiser :enter] [:->async :enter] [:->async :leave] [:promiser :leave] [:ix :leave]]]
        (test/async
