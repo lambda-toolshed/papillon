@@ -28,17 +28,18 @@
   "Transition the context `ctx` to the candidate context value `candidate`.  This function
   works synchronously with value candidates -any async processing should be performed prior
   to invoking this function."
-  [ctx candidate-ctx]
+  [ctx candidate-ctx tag]
   (cond
     (-> candidate-ctx reduced?) (-> ctx
-                                    (transition (unreduced candidate-ctx))
+                                    (transition (unreduced candidate-ctx) tag)
                                     clear-queue)
     (-> candidate-ctx error?) (-> ctx
                                   (assoc ::error candidate-ctx)
                                   clear-queue)
     (-> candidate-ctx context? not) (-> ctx
-                                        (assoc ::error (ex-info "Context was lost!"
-                                                                {::ctx ctx
+                                        (assoc ::error (ex-info (format "Context was lost at %s!" tag)
+                                                                {::tag tag
+                                                                 ::ctx ctx
                                                                  ::candidate-ctx candidate-ctx}))
                                         clear-queue)
     :else candidate-ctx))
@@ -51,17 +52,18 @@
   If the `:lambda-toolshed.papillon/trace` key is present then stage function
   invocations are conj'd onto its value."
   [{trace ::trace :as ctx} ix stage]
-  (let [ctx (if trace
-              (update ctx ::trace conj [(or (:name ix) (-> ix meta :name)) stage])
+  (let [tag [(or (:name ix) (-> ix meta :name)) stage]
+        ctx (if trace
+              (update ctx ::trace conj tag)
               ctx)]
     (let [f (or (stage ix) identity)]
       (try
         (let [res (f ctx)]
           (if (satisfies? ReadPort res)
-            (go (transition ctx (<! res)))
-            (transition ctx res)))
+            (go (transition ctx (<! res) tag))
+            (transition ctx res tag)))
         (catch #?(:clj Throwable :cljs :default) err
-          (transition ctx err))))))
+          (transition ctx err tag))))))
 
 (defn- enter
   "Run the queued enter chain in the given context `ctx`.  If the
