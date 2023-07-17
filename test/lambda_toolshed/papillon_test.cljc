@@ -187,7 +187,7 @@
                       [:capture :error]]
         res (ix/execute ixs {::ix/trace []})]
     (is (= expected-log (::ix/trace res)))
-    (is (= "Context was lost!" (ex-message (res ::error))))
+    (is (= "Context was lost at [:loser :enter]!" (ex-message (res ::error))))
     (go-test
      (let [ixs [capture-ix {:name :loser
                             :enter (constantly (doto (async/chan)
@@ -199,7 +199,7 @@
            [res _] (alts! [(ix/execute ixs {::ix/trace []})
                            (async/timeout 10)])]
        (is (map? res))
-       (is (= "Context was lost!" (ex-message (res ::error))))
+       (is (= "Context was lost at [:loser :enter]!" (ex-message (res ::error))))
        (is (= expected-log (::ix/trace res)))))))
 
 (deftest error-chain-is-invoked-when-leave-asynchronously-returns-an-exception
