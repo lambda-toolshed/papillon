@@ -2,23 +2,27 @@
 All notable changes to this project will be documented in this file. This change log follows the conventions of [keepachangelog.com](http://keepachangelog.com/).
 
 ## [Unreleased]
-### Changed
-- Add a new arity to `make-widget-async` to provide a different widget shape.
 
-## [0.1.1] - 2022-01-07
+### Added
+- A new protocol `Chrysalis` as the unifying result type for synchronous and asynchronous results.
+  - Add support for IDeref protocol as Chrysalis, allowing `Future` results to be synchronously awaited and turned back to synchronous execution flow.
+- New exception entry under the `::error` key when the context is lost during execution.
+
 ### Changed
-- Documentation on how to make the widgets.
+- Fully synchronous interceptor chain returns the result directly, or throws the value in the `::error` key.
+- Interceptor chain with at least one asynchronous interceptor return value in it now:
+  - returns the result wrapped in the asynchronous type of the outermost interceptor
+  - the wrapped result is now either
+    - the value under the `::error` key in the context, if present,
+    - or the final context otherwise
 
 ### Removed
-- `make-widget-sync` - we're all async, all the time.
+- Remove the direct dependency on `core.async`, a new namespace of `lambda-toolshed.papillon.async.core-async` has been included to support extending a `core.async` channel to be a `Chrysalis`.
+  - This should allow usage of Papillon in other target runtimes, e.g. `nbb`, that do not support `core.async`
 
-### Fixed
-- Fixed widget maker to keep working when daylight savings switches over.
-
-## 0.1.0 - 2022-01-07
+## 0.0.1-PREVIEW - 2022-01-20
 ### Added
-- Files from the new template.
-- Widget maker public API - `make-widget-sync`.
+- Initial Preview release
 
 [Unreleased]: https://github.com/lambda-toolshed/papillon/compare/0.1.1...HEAD
 [0.1.1]: https://github.com/lambda-toolshed/papillon/compare/0.1.0...0.1.1
