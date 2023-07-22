@@ -6,6 +6,9 @@
    #?@(:cljs ([goog.string :as gstring]
               goog.string.format))))
 
+(def fmt
+  #?(:clj format :cljs gstring/format))
+
 (defn enqueue
   [ctx ixs]
   (update ctx ::queue into ixs))
@@ -37,7 +40,7 @@
                                   (assoc ::error candidate-ctx)
                                   clear-queue)
     (-> candidate-ctx context? not) (-> ctx
-                                        (assoc ::error (ex-info (format "Context was lost at %s!" tag)
+                                        (assoc ::error (ex-info (fmt "Context was lost at %s!" tag)
                                                                 {::tag tag
                                                                  ::ctx ctx
                                                                  ::candidate-ctx candidate-ctx}))
@@ -131,8 +134,7 @@
 (defn- namer [i ix]
   (if (:name ix)
     ix
-    (let [fmt #?(:clj format :cljs gstring/format)]
-      (vary-meta ix update :name (fnil identity (fmt "itx%02d" i))))))
+    (vary-meta ix update :name (fnil identity (fmt "itx%02d" i)))))
 
 (defn execute
   "Execute the interceptor chain `ixs` with the given initial context `ctx`.
