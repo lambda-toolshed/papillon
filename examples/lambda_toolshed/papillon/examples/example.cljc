@@ -1,6 +1,7 @@
 (ns lambda-toolshed.papillon.examples.example
   (:require
    [lambda-toolshed.papillon :as papillon :refer [enqueue execute]]
+   [lambda-toolshed.papillon.async.core-async]
    [clojure.core.async :as async :refer [go <! >! chan]]
    clojure.pprint))
 
@@ -23,7 +24,7 @@
    :enter (fn [ctx]
             (update ctx :number #(* % 2)))})
 
-;; Run an interceptor chain with one interceptor in it that is synchronous
+;; Run an interceptor chain with two interceptors in it that is synchronous
 ;; and does not take an initial context to augment
 (let [c (execute [one-ix
                   double-number-ix])]
@@ -368,12 +369,12 @@
 
 ;; Interceptors can also manipulate the queue
 ;; this one uses `enqueue` to add more things to do
-(def ensure-even-with-tracing-ix
-  {:name :ensure-even-with-tracing-ix
+(def ensure-even-with-debugging-ix
+  {:name :ensure-even-with-debugging-ix
    :enter (fn [ctx]
             (if (even? (:number ctx))
               ctx
-              (enqueue ctx (with-tracing [double-number-ix async-square-number-ix async-square-number-ix]))))})
+              (enqueue ctx (with-debugging [double-number-ix async-square-number-ix async-square-number-ix]))))})
 
 ;; continues through the whole chain when the starting number is 3
 ;; note the traceing doesn't happen here as the interleaving was
@@ -383,7 +384,7 @@
 (go
   (let [c (execute (interleave (repeat debug-ix)
                                [async-square-number-ix
-                                ensure-even-with-tracing-ix])
+                                ensure-even-with-debugging-ix])
                    {:number 3})]
     (clojure.pprint/pprint (<! c))))
 
@@ -392,7 +393,7 @@
 (go
   (let [c (execute (interleave (repeat debug-ix)
                                [async-square-number-ix
-                                ensure-even-with-tracing-ix])
+                                ensure-even-with-debugging-ix])
                    {:number 2})]
     (clojure.pprint/pprint (<! c))))
 

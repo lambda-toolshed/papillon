@@ -1,6 +1,7 @@
 (ns lambda-toolshed.papillon.examples.condition-system
   (:require
    [lambda-toolshed.papillon :as papillon :refer [execute]]
+   [lambda-toolshed.papillon.async.core-async]
    [clojure.core.async :as async :refer [go <!]]
    clojure.pprint))
 

@@ -1,6 +1,7 @@
 (ns lambda-toolshed.papillon.examples.distributed-transaction
   (:require
    [lambda-toolshed.papillon :as papillon]
+   [lambda-toolshed.papillon.async.core-async]
    [clojure.core.async :as async :refer [go put! <! >! chan]]
    [clojure.pprint :as pp]))
 

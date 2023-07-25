@@ -1,6 +1,5 @@
 (ns lambda-toolshed.test-utils
   (:require [clojure.core.async :as async]
-            [clojure.core.async.impl.protocols :as impl]
             [clojure.test :as test]))
 
 (defmacro go-test
@@ -20,8 +19,8 @@
 (defn runt-fn!
   "`runt!` helper function"
   [f]
-  (let [once-fixture-fn (clojure.test/join-fixtures (:clojure.test/once-fixtures (meta *ns*)))
-        each-fixture-fn (clojure.test/join-fixtures (:clojure.test/each-fixtures (meta *ns*)))]
+  (let [once-fixture-fn (test/join-fixtures (:clojure.test/once-fixtures (meta *ns*)))
+        each-fixture-fn (test/join-fixtures (:clojure.test/each-fixtures (meta *ns*)))]
     (once-fixture-fn
      (fn []
        (each-fixture-fn
