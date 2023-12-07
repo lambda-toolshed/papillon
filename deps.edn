@@ -1,7 +1,7 @@
 {:paths ["src" "resources"]
  :deps {org.clojure/clojure {:mvn/version "1.11.1"}
-        org.clojure/clojurescript {:mvn/version "1.11.60"}
-        org.clojure/core.async {:mvn/version "1.6.673"}}
+        org.clojure/clojurescript {:mvn/version "1.11.121"}
+        org.clojure/core.async {:mvn/version "1.6.681"}}
  :aliases {:build {:deps {io.github.seancorfield/build-clj
                           {:git/tag "v0.9.2" :git/sha "9c9f078"}}
                    :ns-default build}
@@ -19,7 +19,7 @@
                               :jvm-opts ["-DENVIRONMENT=test"]}
 
            ;; for interactive test running
-           :project/watch-test {:extra-deps {lambdaisland/kaocha {:mvn/version "1.85.1342"}}
+           :project/watch-test {:extra-deps {lambdaisland/kaocha {:mvn/version "1.87.1366"}}
                                 :exec-fn kaocha.runner/exec-fn
                                 :exec-args {:watch? true
                                             :skip-meta :slow
@@ -40,17 +40,18 @@
 
            ;; Reference: https://github.com/liquidz/antq
            ;; Example Usage: clj -M:outdated
-           :outdated {:extra-deps {com.github.liquidz/antq {:mvn/version "RELEASE"}}
+           :outdated {:deps {com.github.liquidz/antq {:mvn/version "RELEASE"}
+                             org.slf4j/slf4j-nop     {:mvn/version "RELEASE"}}
                       :main-opts ["-m" "antq.core" "--skip=github-action"]}
 
            :project/format-check {:extra-deps {cljfmt/cljfmt {:mvn/version "0.9.2"}}
                                   :main-opts  ["-m" "cljfmt.main" "check"]}
 
            :project/cljs-nrepl {:main-opts ["-m" "nrepl.cmdline" "--middleware" "[\"cider.piggieback/wrap-cljs-repl\"]"]
-                                :extra-deps  {nrepl/nrepl  {:mvn/version "1.0.0"}
+                                :extra-deps  {nrepl/nrepl  {:mvn/version "1.1.0"}
                                               cider/piggieback {:mvn/version "0.5.3"}}}
 
            :project/nrepl {:main-opts ["-m" "nrepl.cmdline" "--middleware" "[\"cider.nrepl/cider-middleware\"]"]
-                           :extra-deps {nrepl/nrepl {:mvn/version "1.0.0"}
-                                        cider/cider-nrepl {:mvn/version "0.31.0"}}
+                           :extra-deps {nrepl/nrepl {:mvn/version "1.1.0"}
+                                        cider/cider-nrepl {:mvn/version "0.44.0"}}
                            :jvm-opts ["-DENVIRONMENT=staging"]}}}
