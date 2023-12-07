@@ -6,7 +6,7 @@
    #?@(:cljs ([goog.string :as gstring]
               goog.string.format))))
 
-(def fmt
+(def ^:private fmt
   #?(:clj format :cljs gstring/format))
 
 (defn enqueue
