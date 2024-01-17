@@ -6,12 +6,24 @@
    #?@(:cljs ([goog.string :as gstring]
               goog.string.format))))
 
-(def fmt
+(def ^:private fmt
   #?(:clj format :cljs gstring/format))
 
+(defprotocol InterceptorPromotable
+  (promote [this] "Promote this to an interceptor"))
+
+(extend-protocol InterceptorPromotable
+  #?(:clj clojure.lang.Var :cljs cljs.core/Var) (promote [this] (deref this))
+  #?@(:clj (clojure.lang.IPersistentMap (promote [this] this))
+      :cljs (cljs.core/PersistentArrayMap (promote [this] this)
+                                          cljs.core/PersistentHashMap (promote [this] this)
+                                          cljs.core/PersistentTreeMap (promote [this] this)))
+  ;; TODO: extend the default in cljs
+  #?(:clj Object :cljs object) (promote [this] (throw (ex-info "Not promoteable to an Interceptor!"
+                                                               {:obj this :type (type this)}))))
 (defn enqueue
   [ctx ixs]
-  (update ctx ::queue into ixs))
+  (update ctx ::queue into (map promote) ixs))
 
 (defn- error?
   "Is the given value `x` an exception?"

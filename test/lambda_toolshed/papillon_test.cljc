@@ -33,7 +33,11 @@
           ixs2 [{}]
           ctx (ix/enqueue (ix/enqueue {} ixs) ixs2)]
       (is (::ix/queue ctx))
-      (is (= (::ix/queue ctx) (apply conj ixs ixs2))))))
+      (is (= (::ix/queue ctx) (apply conj ixs ixs2)))))
+  (testing "enqueues resolved vars"
+    (let [ixs []
+          ctx (ix/enqueue (#'ix/init-ctx {}[]) [#'async-ix])]
+      (is (= async-ix (-> ctx ::ix/queue first))))))
 
 (deftest clear-queue
   (testing "clears the context's queue"
