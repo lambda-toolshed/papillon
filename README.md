@@ -56,9 +56,7 @@ Given that the control flow is data, and available on the context, it allowed us
 
 #### Clojure Core Libraries Based
 
-We stuck with core.async and the ReadPort as our asynchronous mechanism. If we are a library, we didn’t want to commit you to a library because you use Papillon. Clojure (JVM) already has various asynchronous constructs that work with ReadPort and we piggy-backed on ReadPort in ClojureScript land to allow you to use JavaScript Promises as a ReadPort.
-
-The Goal was to give you something that would work out of the box with the various tools to do asynchronous programming that Clojure and ClojureScript give you without making you implement yet another protocol to adapt to.
+We have worked hard to limit your exposure to transitive dependencies.  The core of papillon has zero dependencies other than Clojure (or Clojurescript) itself.  Even async support is expressed with callbacks so as to limit the imposed requirement for something like clojure.core.async.  Nevertheless, papillon provides opt-in support for core.async and extending papillon to support other async libs (e.g. manifold or promesa) is a simple matter of extending the Chrysalis protocol's emerge function.
 
 Get more discussion on Interceptors starting again
 We don’t expect that this will become the next big hit and everyone will start using this in their code, but we do hope that by publishing and promoting “Yet Another Interceptor Library”
@@ -68,6 +66,36 @@ We don’t expect that this will become the next big hit and everyone will start
 Those of us in our group who were pushing this project forward think interceptors are a valuable and a “well kept secret” of the Clojure ecosystem, and would love to see more usages of them in the community.
 
 We also would love to see some more abuses of interceptors as well, because it helps find the edges of what can(not) and should (not) be done with them.
+
+#### Async and Sync support
+We want papillon to support sync and async use cases and we find different interpretations of what that could mean, roughly divided into two arenas.
+1. Papillon allows interceptors to return deferred computations of the updated context.  An interceptor chain can contain a mix of interceptors that produce deferred results and interceptors that produce realized results; a given interceptor can even vary its return type conditionally.  We call an interceptor that returns a deferred type (more on that later) an "async interceptor."  Papillon always realizes the deferred result of an async interceptor before invoking the next interceptor in the chain.
+2. Papillon allows the result of executing the entire interceptor chain to be deferred, invoking a user-supplied callback function upon completion.  We call this an "async chain."
+
+These two approaches can be mixed and matched:
+
+* Sync chain and sync interceptors: the baseline.  Appropriate for computation-focused chains or situations where chain execution context has been managed by the developer prior to invocation.
+* Sync chain and async interceptors: useful for testing async interceptors and for reusing (possibly) async interceptors transparently in sync chains.
+* Async chain and sync interceptors: useful for reusing sync interceptors transparently in async chains.
+* Async chain and async interceptors: essentials for single-threaded environments like ClojureScript where otherwise blocking operations must yield to the event loop.
+
+By using a callback, papillon does not impose an async solution on developers.  It works equally well with promises (in Clojure or ClojureScript), core.async channels (in Clojure and ClojureScript), futures, etc.
+
+The Chrysalis protocol is central to papillon's async support.  It is used by papillon to realize the deferred result of an async interceptor.  Realizing a deferred value in a sync chain using the single-arity `emerge` function of Chrysalis, while realizing a deferered value in an async chain uses the two-arity version.  Here's an example extending support in Clojure and ClojureScript to core.async channels:
+
+``` clojure
+(extend-protocol Chrysalis
+  #?(:clj  clojure.core.async.impl.protocols.Channel :cljs cljs.core.async.impl.channels/ManyToManyChannel)
+  (emerge ([this] (async/<!! this))
+          ([this callback] (async/take! this callback))))
+```
+Note how the single-arity version blocks while the two-arity does not.  All implementations of Chrysalis must observe this restriction!
+
+Executing a chain asynchronously requires that you provide a callback function when invoking `papillon/execute`.  Here's an example using a promise to convey the result to the caller:
+
+``` clojure
+
+```
 
 ## How it works
 

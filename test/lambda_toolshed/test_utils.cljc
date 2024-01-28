@@ -13,9 +13,21 @@
        (reify
          cljs.test/IAsyncTest
          cljs.core/IFn
-         (~'-invoke [_# done2#] (obj# done2#) c#)))
+         (~'-invoke [_# done2#] (obj# done2#))))
     ;; In Clojure we block awaiting the completion of the async test block
     `(async/<!! (async/go (do ~@body)))))
+
+(defmacro test-async
+  "Asynchronously execute the test body."
+  [done & body]
+  (if (:ns &env)
+    ;; In ClojureScript we execute the body as a test/async body, letting test/async bind the done callback.
+    `(test/async ~done ~@body)
+    ;; In Clojure we keep the same signature, but provide a blocking coordination function for the done "callback".
+    `(let [p# (promise)
+           ~done (fn [] (deliver p# true))]
+       ~@body
+       @p#)))
 
 (defn runt-fn!
   "`runt!` helper function"

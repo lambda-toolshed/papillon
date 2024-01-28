@@ -1,29 +1,33 @@
 (ns lambda-toolshed.papillon
-  (:require
-   [clojure.core.async :refer [<! go go-loop take! put! chan]]
-   [clojure.core.async.impl.protocols :refer [ReadPort]]
-   [lambda-toolshed.papillon.async]
-   #?@(:cljs ([goog.string :as gstring]
-              goog.string.format))))
+  (:require [lambda-toolshed.papillon.protocols :refer [promote emerge]]
+            #?@(:cljs ([goog.string :as gstring]
+                       goog.string.format))))
 
 (def ^:private fmt
   #?(:clj format :cljs gstring/format))
 
-(defprotocol InterceptorPromotable
-  (promote [this] "Promote this to an interceptor"))
+(defn- identify
+  "Return the string identifier of the given interceptor `ix`."
+  [ix]
+  (or (:name ix) (str "ix-" (hash ix))))
 
-(extend-protocol InterceptorPromotable
-  #?(:clj clojure.lang.Var :cljs cljs.core/Var) (promote [this] (deref this))
-  #?@(:clj (clojure.lang.IPersistentMap (promote [this] this))
-      :cljs (cljs.core/PersistentArrayMap (promote [this] this)
-                                          cljs.core/PersistentHashMap (promote [this] this)
-                                          cljs.core/PersistentTreeMap (promote [this] this)))
-  ;; TODO: extend the default in cljs
-  #?(:clj Object :cljs object) (promote [this] (throw (ex-info "Not promoteable to an Interceptor!"
-                                                               {:obj this :type (type this)}))))
 (defn enqueue
   [ctx ixs]
   (update ctx ::queue into (map promote) ixs))
+
+(defn initialize
+  "Inialize the given context `ctx` with the necessary data structures to process
+   the interceptor chain `ixs`.  Note: starting with an initial context that
+   contains the key `:lambda-toolshed.papillon/error` is undefined and may change."
+  ([ixs] (initialize ixs {}))
+  ([ixs ctx]
+   (-> ctx
+       (vary-meta assoc :type ::ctx)
+       (assoc ::queue #?(:clj clojure.lang.PersistentQueue/EMPTY
+                         :cljs cljs.core/PersistentQueue.EMPTY))
+       (assoc ::stack [])
+       (assoc ::stage :enter)
+       (enqueue ixs))))
 
 (defn- error?
   "Is the given value `x` an exception?"
@@ -43,115 +47,67 @@
   "Transition the context `ctx` to the candidate context value `candidate`.  This function
   works synchronously with value candidates -any async processing should be performed prior
   to invoking this function."
-  [ctx candidate-ctx tag]
+  [ctx tag candidate-ctx]
   (cond
     (-> candidate-ctx reduced?) (-> ctx
-                                    (transition (unreduced candidate-ctx) tag)
+                                    (transition tag (unreduced candidate-ctx))
                                     clear-queue)
     (-> candidate-ctx error?) (-> ctx
                                   (assoc ::error candidate-ctx)
+                                  (assoc ::stage :error)
                                   clear-queue)
-    (-> candidate-ctx context? not) (-> ctx
-                                        (assoc ::error (ex-info (fmt "Context was lost at %s!" tag)
-                                                                {::tag tag
-                                                                 ::ctx ctx
-                                                                 ::candidate-ctx candidate-ctx}))
-                                        clear-queue)
-    :else candidate-ctx))
+    (-> candidate-ctx context? not) (let [e (ex-info (fmt "Context was lost at %s!" tag)
+                                                     {::tag tag
+                                                      ::ctx ctx
+                                                      ::candidate-ctx candidate-ctx})]
+                                      (transition ctx tag e))
+    :else (let [{::keys [error stage]} candidate-ctx]
+            (if (and (not error) (= stage :error))
+              (assoc candidate-ctx ::stage :leave)
+              candidate-ctx))))
 
-(defn- try-stage
-  "Try to invoke the stage function at the `stage` key of the interceptor `ix`
-  with the context `ctx` and return the result.  If there is no value at the
-  `stage` key the context is returned unchanged.
+(defn- move
+  [{::keys [queue stack stage trace] :as ctx}]
+  (case stage
+    :enter (if-let [ix (peek queue)]
+             [ix (cond-> ctx
+                   true (update ::queue pop)
+                   true (update ::stack conj ix)
+                   trace (update ::trace conj [(identify ix) stage]))]
+             (-> ctx (assoc ::stage :leave) move))
+    (:error :leave) (if-let [ix (peek stack)]
+                      [ix (cond-> ctx
+                            true (update ::stack pop)
+                            trace (update ::trace conj [(identify ix) stage]))]
+                      [nil ctx])))
 
-  If the `:lambda-toolshed.papillon/trace` key is present then stage function
-  invocations are conj'd onto its value."
-  [{trace ::trace :as ctx} ix stage]
-  (let [tag [(or (:name ix) (-> ix meta :name)) stage]
-        ctx (if trace
-              (update ctx ::trace conj tag)
-              ctx)]
-    (let [f (or (stage ix) identity)]
-      (try
-        (let [res (f ctx)]
-          (if (satisfies? ReadPort res)
-            (go (transition ctx (<! res) tag))
-            (transition ctx res tag)))
-        (catch #?(:clj Throwable :cljs :default) err
-          (transition ctx err tag))))))
-
-(defn- enter
-  "Run the queued enter chain in the given context `ctx`.  If the
-  `:lambda-toolshed.papillon/error` key is present in `ctx` then clear the queue
-  (thus terminating the `enter` chain) and start processing the `:error` chain.
-  If `ctx` is reduced (per `clojure.core/reduced?`) an early return is inferred
-  and the unreduced `ctx` is used to start processing the `:leave` chain.
-
-  `enter` also 'collapses' nested async calls by recurisvely calling
-  itself with the value taken from the channel to ensure that if a
-  channel was returned, it doesn't halt if that channel is another
-  channel, but continues until it gets a non-ReadPort value for the
-  context."
+(defn- ix-sync
   [ctx]
-  (if (satisfies? ReadPort ctx)
-    (go (enter (<! ctx)))
-    (if-let [ix (peek (::queue ctx))]
-      (recur (-> ctx
-                 (update ::queue pop)
-                 (update ::stack conj ix)
-                 (try-stage ix :enter)))
-      ctx)))
+  (let [[ix {::keys [stage] :as ctx}] (move ctx)]
+    (if ix
+      (let [f (or (ix stage) identity)
+            f (fn [ctx] (try (f ctx) (catch #?(:clj Throwable :cljs :default) e e)))
+            tag [(identify ix) stage]
+            jump (partial transition ctx tag)]
+        (recur (-> ctx f emerge jump)))
+      (if-let [e (::error ctx)] (throw e) ctx))))
 
-(defn- leave
-  "Runs the stacked `:leave` chain or `:error` chain in the given context `ctx`.
-  if there is a value at the `:lambda-toolshed.papillon/error` key in `ctx` then
-  the `:error` chain is run, otherwise the `:leave` chain is run.
-
-  You should remove the `:lambda-toolshed.papillon/error` key from the returned
-  context if you handle the error.  This will stop processing the `:error` chain
-  and start processing the `:leave` chain in the stack of interceptors."
-  [ctx]
-  (if (satisfies? ReadPort ctx)
-    (go (leave (<! ctx)))
-    (if-let [ix (peek (::stack ctx))]
-      (recur (-> ctx
-                 (update ::stack pop)
-                 (try-stage ix (if (::error ctx) :error :leave))))
-      ctx)))
-
-(defn- init-ctx
-  "Inialize the given context `ctx` with the necessary data structures to
-  process the interceptor chain `ixs`."
-  [ctx ixs]
-  (-> ctx
-      (assoc ::queue #?(:clj clojure.lang.PersistentQueue/EMPTY
-                        :cljs cljs.core/PersistentQueue.EMPTY))
-      (assoc ::stack [])
-      (vary-meta assoc :type ::ctx)
-      (enqueue ixs)))
-
-(defn- present-sync
-  [result]
-  (if-let [error (::error result)]
-    (throw error)
-    result))
-
-(defn- present-async
-  [result]
-  (go-loop [ctx result]
-    (if (satisfies? ReadPort ctx)
-      (recur (<! ctx))
-      (or (::error ctx) ctx))))
-
-(defn- namer [i ix]
-  (if (:name ix)
-    ix
-    (vary-meta ix update :name (fnil identity (fmt "itx%02d" i)))))
+(defn- ix-async
+  [ctx callback]
+  (let [[ix {::keys [stage] :as ctx}] (move ctx)]
+    (if ix
+      (let [f (or (ix stage) identity)
+            f (fn [ctx] (try (f ctx) (catch #?(:clj Throwable :cljs :default) e e)))
+            tag [(identify ix) stage]
+            jump (partial transition ctx tag)
+            continue (comp #(ix-async % callback) jump)]
+        (-> ctx f (emerge continue)))
+      (callback (or (::error ctx) ctx)))))
 
 (defn execute
-  "Execute the interceptor chain `ixs` with the given initial context `ctx`.
+  "Execute the interceptor chain within the given context `ctx`.
 
-  Run foward through the chain calling the functions associated with the
+  Run forward through the chain calling the functions associated with the
   `:enter` key (where it exists), while accumulating a stack of interceptors
   seen.
 
@@ -159,30 +115,27 @@
   order invoking the function at the `:leave` or `:error` key based on the
   `:lambda-toolshed.papillon/error` key of the context.
 
-  The initial context `ctx` is augmented with the necessary housekeeping data
-  structures before processing the chain.  If no context is provided an empty
-  map is used.
+  The initial context `ctx` must include the necessary housekeeping data
+  structures before processing the chain.  See `initialize`.
 
-  Note: Starting with an initial context that contains the key
-  `:lambda-toolshed.papillon/error` is undefined and may change.
+  Async Mode: this function returns nil and `callback` is invoked asynchronously
+  with the resulting context.  All interceptors must return context values or
+  deferred context values that can be realized without blocking (via the two-
+  arity version of the Chrysalis protocol).
 
-  Executing the interceptor chain can complete synchronously or asynchronously.
-  If any interceptor function (enter, leave or error) completes asynchronously,
-  then chain execution will complete asynchronously, otherwise the chain execution
-  will complete synchronously.
+  Sync Mode: this function returns the resulting context synchronously, possibly
+  blocking while waiting for deferred contexts to be realized.  All interceptors
+  must return context values or deferred context values that can be realized
+  synchronously (via the single-arity version of the Chryslis protocol).
 
-  The result of executing the chain is either:
-
-  1. (async) a channel whose sole value is the chain execution result or an
-     exception (when not handled by the chain).
-  2. (sync) the chain execution result, or a thrown exception (when not handled
-     by the chain)."
-  ([ixs]
-   (execute ixs {}))
-  ([ixs ctx]
-   (let [ixs (map-indexed namer ixs)
-         ctx (init-ctx ctx ixs)
-         result (leave (enter ctx))]
-     (if (satisfies? ReadPort result)
-       (present-async result)
-       (present-sync result)))))
+  Returns either (Sync Mode) the resulting context of executing the chain or
+  (Async Mode) nil."
+  ;; synchronous execution
+  ([ctx]
+   {:pre [(= ::ctx (-> ctx meta :type))]}
+   (ix-sync ctx))
+  ;; asynchronous execution
+  ([ctx callback]
+   {:pre [(= ::ctx (-> ctx meta :type)) (fn? callback)]}
+   (ix-async ctx callback)
+   nil))

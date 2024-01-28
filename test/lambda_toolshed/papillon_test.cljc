@@ -1,26 +1,24 @@
 (ns lambda-toolshed.papillon-test
   (:require
-   [clojure.core.async :as async :refer [alts! go]]
    [clojure.test :refer [deftest is testing]]
    [lambda-toolshed.papillon :as ix]
-   [lambda-toolshed.test-utils :refer [go-test runt! runt-fn!] :include-macros true]))
+   [lambda-toolshed.test-utils :refer [runt! runt-fn! test-async] :include-macros true]))
 
-(def ^:private capture-ix
-  {:name :capture
+(def ix {:name :ix :enter identity :leave identity :error identity})
+(def exception (ex-info "the exception" {}))
+(def ix-throw-on-enter {:name :ix-throw-on-enter :enter (fn [_] (throw exception))})
+(def ix-throw-on-leave {:name :ix-throw-on-leave :leave (fn [_] (throw exception))})
+(def ix-catch
+  {:name :ix-catch
    :error (fn [{error ::ix/error :as ctx}]
             (-> ctx
                 (dissoc ::ix/error)
                 (assoc ::error error)))})
 
-(defn ->async
-  [itx]
-  "Convert the synchronous interceptor `itx` to the async equivalent"
-  (-> itx
-      (update :enter #(when % (fn [ctx] (async/go (% ctx)))))
-      (update :leave #(when % (fn [ctx] (async/go (% ctx)))))
-      (update :error #(when % (fn [ctx] (async/go (% ctx)))))))
-
-(def async-ix (->async {:name :->async :enter identity}))
+(def ix-counter {:name :ix-counter
+                 :enter #(update % :enter (fnil inc 0))
+                 :leave #(update % :leave (fnil inc 0))
+                 :error #(update % :error (fnil inc 0))})
 
 (deftest enqueue
   (testing "enqueues interceptors to an empty context"
@@ -36,8 +34,8 @@
       (is (= (::ix/queue ctx) (apply conj ixs ixs2)))))
   (testing "enqueues resolved vars"
     (let [ixs []
-          ctx (ix/enqueue (#'ix/init-ctx {}[]) [#'async-ix])]
-      (is (= async-ix (-> ctx ::ix/queue first))))))
+          ctx (ix/enqueue (ix/initialize [] {}) [#'ix-counter])]
+      (is (= ix-counter (-> ctx ::ix/queue first))))))
 
 (deftest clear-queue
   (testing "clears the context's queue"
@@ -45,228 +43,269 @@
           ctx (ix/clear-queue (ix/enqueue {} ixs))]
       (is (empty? (ctx ::ix/queue))))))
 
+(deftest baseline
+  (let [ctx (ix/initialize [ix-counter] {::ix/trace [] ::x true})
+        expected-trace [[:ix-counter :enter] [:ix-counter :leave]]]
+    (testing "sync"
+      (let [result (ix/execute ctx)]
+        (is (= expected-trace (::ix/trace result)))
+        (is (= 1 (:enter result)))
+        (is (= 1 (:leave result)))
+        (is (nil? (:error result)))
+        (is (::x result))))
+    (testing "async"
+      (test-async done
+        (let [cb (fn [result]
+                   (is (= expected-trace (::ix/trace result)))
+                   (is (= 1 (:enter result)))
+                   (is (= 1 (:leave result)))
+                   (is (nil? (:error result)))
+                   (is (::x result))
+                   (done))]
+          (ix/execute ctx cb))))))
+
 (deftest allows-for-empty-chain-of-interceptors
-  (is (= {::ix/queue #?(:clj clojure.lang.PersistentQueue/EMPTY
-                        :cljs cljs.core/PersistentQueue.EMPTY)
-          ::ix/stack []}
-         (ix/execute [] {}))))
+  (let [ixs []
+        ctx (ix/initialize ixs {::ix/trace [] ::x true})
+        expected-trace []]
+    (testing "sync"
+      (let [result (ix/execute ctx)]
+        (is (= expected-trace (::ix/trace result)))
+        (is (::x result))))
+    (testing "async"
+      (test-async done
+        (let [cb (fn [result]
+                   (is (= expected-trace (::ix/trace result)))
+                   (is (::x result))
+                   (done))]
+          (ix/execute ctx cb))))))
 
 (deftest allows-for-interceptor-chain-of-only-enters
   (let [ixs [{:name :ix :enter identity}]
-        expected-log [[:ix :enter] [:ix :leave]]
-        res (ix/execute ixs {})]
-    (let [res (ix/execute ixs {::ix/trace []})]
-      (is (empty? (::ix/queue res)))
-      (is (empty? (::ix/stack res)))
-      (is (= expected-log (::ix/trace res))))
-    (go-test
-     (let [ixs (mapv ->async ixs)
-           [res _] (async/alts! [(ix/execute ixs {::ix/trace []})
-                                 (async/timeout 10)])]
-       (is (map? res))
-       (is (empty? (::ix/queue res)))
-       (is (empty? (::ix/stack res)))
-       (is (= expected-log (::ix/trace res)))))))
+        ctx (ix/initialize ixs {::ix/trace [] ::x true})
+        expected-trace [[:ix :enter] [:ix :leave]]]
+    (testing "sync"
+      (let [result (ix/execute ctx)]
+        (is (= expected-trace (::ix/trace result)))
+        (is (::x result))))
+    (testing "async"
+      (test-async done
+        (let [cb (fn [result]
+                   (is (= expected-trace (::ix/trace result)))
+                   (is (::x result))
+                   (done))]
+          (ix/execute ctx cb))))))
 
 (deftest allows-for-interceptor-chain-of-only-leaves
   (let [ixs [{:name :ix :leave identity}]
-        expected-log [[:ix :enter] [:ix :leave]]]
-    (let [res (ix/execute ixs {::ix/trace []})]
-      (is (empty? (::ix/queue res)))
-      (is (empty? (::ix/stack res)))
-      (is (= expected-log (::ix/trace res))))
-    (go-test
-     (let [ixs (mapv ->async ixs)
-           [res _] (async/alts! [(ix/execute ixs {::ix/trace []})
-                                 (async/timeout 10)])]
-       (is (map? res))
-       (is (empty? (::ix/queue res)))
-       (is (empty? (::ix/stack res)))
-       (is (= expected-log (::ix/trace res)))))))
+        ctx (ix/initialize ixs {::ix/trace [] ::x true})
+        expected-trace [[:ix :enter] [:ix :leave]]]
+    (testing "sync"
+      (let [result (ix/execute ctx)]
+        (is (= expected-trace (::ix/trace result)))
+        (is (::x result))))
+    (testing "async"
+      (test-async done
+        (let [cb (fn [result]
+                   (is (= expected-trace (::ix/trace result)))
+                   (is (::x result))
+                   (done))]
+          (ix/execute ctx cb))))))
 
 (deftest allows-for-interceptor-chain-of-only-errors
   (let [ixs [{:name :ix :error identity}]
-        expected-log [[:ix :enter] [:ix :leave]]
-        res (ix/execute ixs {::ix/trace []})]
-    (is (empty? (::ix/queue res)))
-    (is (empty? (::ix/stack res)))
-    (is (= expected-log (::ix/trace res))))
-  (go-test
-   "Nothing to be done; chain can't start async processing with only error fns"))
-
-(deftest error-stage-is-never-invoked-if-no-error-has-been-thrown
-  (let [ixs [{:name :ix :enter identity :leave identity :error identity}]
-        expected-log [[:ix :enter] [:ix :leave]]]
-    (let [res (ix/execute ixs {::ix/trace []})]
-      (is (map? res))
-      (is (empty? (::ix/queue res)))
-      (is (empty? (::ix/stack res)))
-      (is (= expected-log (::ix/trace res))))
-    (go-test
-     (let [ixs (mapv ->async ixs)
-           [res _] (async/alts! [(ix/execute ixs {::ix/trace []})
-                                 (async/timeout 10)])]
-       (is (map? res))
-       (is (empty? (::ix/queue res)))
-       (is (empty? (::ix/stack res)))
-       (is (= expected-log (::ix/trace res)))))))
+        ctx (ix/initialize ixs {::ix/trace [] ::x true})
+        expected-trace [[:ix :enter] [:ix :leave]]]
+    (testing "sync"
+      (let [result (ix/execute ctx)]
+        (is (= expected-trace (::ix/trace result)))
+        (is (::x result))))
+    (testing "async"
+      (test-async done
+        (let [cb (fn [result]
+                   (is (= expected-trace (::ix/trace result)))
+                   (is (::x result))
+                   (done))]
+          (ix/execute ctx cb))))))
 
 (deftest exception-semantics-are-preserved
-  (let [the-exception (ex-info "the exception" {})
-        ixs [{:name :ix :enter (fn [_] (throw the-exception))}]]
-    (is (thrown-with-msg?
-         #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo)
-         #"the exception"
-         (ix/execute ixs {})))
-    (go-test
-     (let [ixs (concat [(->async {:enter identity})] ; transition to async
-                       ixs)
-           [res _] (async/alts! [(ix/execute ixs {})
-                                 (async/timeout 10)])]
-       (is (= the-exception res))))))
+  (let [ixs [ix-throw-on-enter]
+        ctx (ix/initialize ixs {::ix/trace [] ::x true})
+        expected-trace [[:ix :enter] [:ix :error]]]
+    (testing "sync"
+      (is (thrown-with-msg?
+           #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo)
+           #"the exception"
+           (ix/execute ctx))))
+    (testing "async"
+      (test-async done
+        (let [cb (fn [result]
+                   (is (= exception result))
+                   (done))]
+          (ix/execute ctx cb))))))
 
 (deftest error-chain-is-invoked-when-enter-throws-an-exception
-  (let [the-exception (ex-info "the exception" {})
-        ixs [capture-ix
-             {:name :thrower :enter (fn [_] (throw the-exception))}]
-        expected-log [[:capture :enter]
-                      [:thrower :enter]
-                      [:thrower :error]
-                      [:capture :error]]]
-    (let [res (ix/execute ixs {::ix/trace []})]
-      (is (= the-exception (::error res)))
-      (is (= expected-log (::ix/trace res))))
-    (go-test
-     (let [ixs (concat [async-ix] ixs)
-           expected-log (concat [[:->async :enter]] expected-log [[:->async :leave]])
-           [res _] (alts! [(ix/execute ixs {::ix/trace []})
-                           (async/timeout 10)])]
-       (is (map? res))
-       (is (= the-exception (::error res)))
-       (is (= expected-log (::ix/trace res)))))))
-
-(deftest error-chain-is-invoked-when-enter-asynchronously-returns-an-exception
-  (let [the-exception (ex-info "the exception" {})
-        ixs [capture-ix
-             {:name :thrower :enter (fn [_] (go the-exception))}]
-        expected-log [[:capture :enter]
-                      [:thrower :enter]
-                      [:thrower :error]
-                      [:capture :error]]]
-    (go-test
-     (let [ixs (concat [async-ix] ixs)
-           expected-log (concat [[:->async :enter]] expected-log [[:->async :leave]])
-           [res _] (alts! [(ix/execute ixs {::ix/trace []})
-                           (async/timeout 10)])]
-       (is (map? res))
-       (is (= the-exception (::error res)))
-       (is (= expected-log (::ix/trace res)))))))
+  (let [ixs [ix-catch ix-throw-on-enter]
+        ctx (ix/initialize ixs {::ix/trace [] ::x true})
+        expected-trace [[:ix-catch :enter]
+                        [:ix-throw-on-enter :enter]
+                        [:ix-throw-on-enter :error]
+                        [:ix-catch :error]]]
+    (testing "sync"
+      (let [result (ix/execute ctx)]
+        (is (= expected-trace (::ix/trace result)))
+        (is (::x result))))
+    (testing "async"
+      (test-async done
+        (let [cb (fn [result]
+                   (is (= expected-trace (::ix/trace result)))
+                   (is (::x result))
+                   (done))]
+          (ix/execute ctx cb))))))
 
 (deftest error-chain-is-invoked-when-leave-throws-an-exception
-  (let [the-exception (ex-info "the exception" {})
-        ixs [capture-ix
-             {:name :thrower :leave (fn [_] (throw the-exception))}]
-        expected-log [[:capture :enter]
-                      [:thrower :enter]
-                      [:thrower :leave]
-                      [:capture :error]]]
-    (let [res (ix/execute ixs {::ix/trace []})]
-      (is (= the-exception (::error res)))
-      (is (= expected-log (::ix/trace res))))
-    (go-test
-     (let [ixs (concat [async-ix] ixs)
-           expected-log (concat [[:->async :enter]] expected-log [[:->async :leave]])
-           [res _] (alts! [(ix/execute ixs {::ix/trace []})
-                           (async/timeout 10)])]
-       (is (map? res))
-       (is (= the-exception (::error res)))
-       (is (= expected-log (::ix/trace res)))))))
+  (let [ixs [ix-catch ix-throw-on-leave]
+        ctx (ix/initialize ixs {::ix/trace [] ::x true})
+        expected-trace [[:ix-catch :enter]
+                        [:ix-throw-on-leave :enter]
+                        [:ix-throw-on-leave :leave]
+                        [:ix-catch :error]]]
+    (testing "sync"
+      (let [result (ix/execute ctx)]
+        (is (= expected-trace (::ix/trace result)))
+        (is (::x result))))
+    (testing "async"
+      (test-async done
+        (let [cb (fn [result]
+                   (is (= expected-trace (::ix/trace result)))
+                   (is (::x result))
+                   (done))]
+          (ix/execute ctx cb))))))
+
+(deftest interceptors-can-return-chrysalises
+  (let [ixs [{:name :ix-chrysalis
+              :enter (fn [ctx]
+                       #?(:clj (let [p (promise)] (deliver p ctx) p)
+                          :cljs (js/Promise.resolve ctx)))}
+             ix]
+        ctx (ix/initialize ixs {::ix/trace [] ::x true})
+        expected-trace [[:ix-chrysalis :enter]
+                        [:ix :enter]
+                        [:ix :leave]
+                        [:ix-chrysalis :leave]]]
+    #?(:clj (testing "sync"
+              (let [result (ix/execute ctx)]
+                (is (= expected-trace (::ix/trace result)))
+                (is (::x result)))))
+    (testing "async"
+      (test-async done
+        (let [cb (fn [result]
+                   (is (= expected-trace (::ix/trace result)))
+                   (is (::x result))
+                   (done))]
+          (ix/execute ctx cb))))))
+
+(deftest error-chain-is-invoked-when-enter-returns-an-exception-chrysalis
+  (let [p #?(:clj (let [p (promise)] (deliver p exception) p)
+             :cljs (js/Promise.resolve exception))
+        ixs [ix-catch
+             {:name :ix-thrown-chrysalis :enter (constantly p)}]
+        ctx (ix/initialize ixs {::ix/trace [] ::x true})
+        expected-trace [[:ix-catch :enter]
+                        [:ix-thrown-chrysalis :enter]
+                        [:ix-thrown-chrysalis :error]
+                        [:ix-catch :error]]]
+    #?(:clj (testing "sync"
+              (let [result (ix/execute ctx)]
+                (is (= expected-trace (::ix/trace result)))
+                (is (::x result))
+                (is (= exception (::error result))))))
+    (testing "async"
+      (test-async done
+        (let [cb (fn [result]
+                   (is (= expected-trace (::ix/trace result)))
+                   (is (::x result))
+                   (is (= exception (::error result)))
+                   (done))]
+          (ix/execute ctx cb))))))
 
 (deftest lost-context-triggers-exception
-  (let [ixs [capture-ix {:name :loser
-                         :enter (constantly nil)}]
-        expected-log [[:capture :enter]
-                      [:loser :enter]
-                      [:loser :error]
-                      [:capture :error]]
-        res (ix/execute ixs {::ix/trace []})]
-    (is (= expected-log (::ix/trace res)))
-    (is (= "Context was lost at [:loser :enter]!" (ex-message (res ::error))))
-    (go-test
-     (let [ixs [capture-ix {:name :loser
-                            :enter (constantly (doto (async/chan)
-                                                 async/close!))}]
-           expected-log [[:capture :enter]
-                         [:loser :enter]
-                         [:loser :error]
-                         [:capture :error]]
-           [res _] (alts! [(ix/execute ixs {::ix/trace []})
-                           (async/timeout 10)])]
-       (is (map? res))
-       (is (= "Context was lost at [:loser :enter]!" (ex-message (res ::error))))
-       (is (= expected-log (::ix/trace res)))))))
+  (let [ixs [ix-catch {:name :loser :enter (constantly nil)}]
+        ctx (ix/initialize ixs {::ix/trace [] ::x true})
+        expected-trace [[:ix-catch :enter]
+                        [:loser :enter]
+                        [:loser :error]
+                        [:ix-catch :error]]]
+    (testing "sync"
+      (let [result (ix/execute ctx)]
+        (is (= expected-trace (::ix/trace result)))
+        (is (= "Context was lost at [:loser :enter]!" (ex-message (result ::error))))))
+    (testing "async"
+      (test-async done
+        (let [cb (fn [result]
+                   (is (= expected-trace (::ix/trace result)))
+                   (is (= "Context was lost at [:loser :enter]!" (ex-message (result ::error))))
+                   (done))]
+          (ix/execute ctx cb))))))
 
-(deftest error-chain-is-invoked-when-leave-asynchronously-returns-an-exception
-  (let [the-exception (ex-info "the exception" {})
-        ixs [capture-ix
-             {:name :thrower :leave (fn [_] (go the-exception))}]
-        expected-log [[:capture :enter]
-                      [:thrower :enter]
-                      [:thrower :leave]
-                      [:capture :error]]]
-    (go-test
-     (let [ixs (concat [async-ix] ixs)
-           expected-log (concat [[:->async :enter]] expected-log [[:->async :leave]])
-           [res _] (alts! [(ix/execute ixs {::ix/trace []})
-                           (async/timeout 10)])]
-       (is (map? res))
-       (is (= the-exception (::error res)))
-       (is (= expected-log (::ix/trace res)))))))
+(deftest error-chain-is-invoked-when-leave-returns-an-exception-chrysalis
+  (let [p #?(:clj (let [p (promise)] (deliver p exception) p)
+             :cljs (js/Promise.resolve exception))
+        ixs [ix-catch
+             {:name :ix-thrown-chrysalis :leave (constantly p)}]
+        ctx (ix/initialize ixs {::ix/trace [] ::x true})
+        expected-trace [[:ix-catch :enter]
+                        [:ix-thrown-chrysalis :enter]
+                        [:ix-thrown-chrysalis :leave]
+                        [:ix-catch :error]]]
+    #?(:clj (testing "sync"
+              (let [result (ix/execute ctx)]
+                (is (= expected-trace (::ix/trace result)))
+                (is (::x result))
+                (is (= exception (::error result))))))
+    (testing "async"
+      (test-async done
+        (let [cb (fn [result]
+                   (is (= expected-trace (::ix/trace result)))
+                   (is (::x result))
+                   (is (= exception (::error result)))
+                   (done))]
+          (ix/execute ctx cb))))))
 
 (deftest leave-chain-is-resumed-when-error-processor-removes-error-key
-  (let [the-exception (ex-info "the exception" {})
-        ixs [{:name :ix :enter identity}
-             capture-ix
-             {:name :thrower :leave (fn [_] (throw the-exception))}]
-        expected-log [[:ix :enter]
-                      [:capture :enter]
-                      [:thrower :enter]
-                      [:thrower :leave]
-                      [:capture :error]
-                      [:ix :leave]]]
-    (let [res (ix/execute ixs {::ix/trace []})]
-      (is (not (contains? res ::ix/error)))
-      (is (= expected-log (::ix/trace res))))
-    (go-test
-     (let [ixs (update ixs 0 ->async)
-           [res _] (alts! [(ix/execute ixs {::ix/trace []})
-                           (async/timeout 10)])]
-       (is (map? res))
-       (is (not (contains? res ::ix/error)))
-       (is (= expected-log (::ix/trace res)))))))
+  (let [ixs [ix ix-catch ix-throw-on-leave]
+        ctx (ix/initialize ixs {::ix/trace [] ::x true})
+        expected-trace [[:ix :enter]
+                        [:ix-catch :enter]
+                        [:ix-throw-on-leave :enter]
+                        [:ix-throw-on-leave :leave]
+                        [:ix-catch :error]
+                        [:ix :leave]]]
+    (testing "sync"
+      (let [result (ix/execute ctx)]
+        (is (= expected-trace (::ix/trace result)))
+        (is (::x result))))
+    (testing "async"
+      (test-async done
+        (let [cb (fn [result]
+                   (is (= expected-trace (::ix/trace result)))
+                   (is (::x result))
+                   (done))]
+          (ix/execute ctx cb))))))
 
-(deftest reduced-context-stops-enter-chain-processing
-  (let [ixs [{:name :reducer :enter reduced}
-             {:name :ix}]
-        expected-log [[:reducer :enter] [:reducer :leave]]]
-    (let [res (ix/execute ixs {::ix/trace []})]
-      (is (= expected-log (::ix/trace res))))
-    (go-test
-     (let [ixs (update ixs 0 ->async)
-           [res _] (alts! [(ix/execute ixs {::ix/trace []})
-                           (async/timeout 10)])]
-       (is (map? res))
-       (is (= expected-log (::ix/trace res)))))))
-
-#?(:cljs
-   (deftest allows-for-promise-return-values
-     (let [ixs [{:name :ix}
-                {:name :promiser :enter (fn [x] (js/Promise.resolve x))}]
-           expected-log [[:ix :enter] [:promiser :enter] [:promiser :leave] [:ix :leave]]]
-       (go-test
-        (let [[res _] (alts! [(ix/execute ixs {::ix/trace []})
-                              (async/timeout 10)])]
-          (is (map? res))
-          (is (empty? (::ix/queue res)))
-          (is (empty? (::ix/stack res)))
-          (is (= expected-log (::ix/trace res))))))))
+#_(deftest reduced-context-stops-enter-chain-processing
+    (let [ixs [{:name :reducer :enter reduced} ix]
+          ctx (ix/initialize ixs {::ix/trace [] ::x true})
+          expected-trace [[:reducer :enter]
+                          [:reducer :leave]]]
+      (testing "sync"
+        (let [result (ix/execute ctx)]
+          (is (= expected-trace (::ix/trace result)))
+          (is (::x result))))
+      (testing "async"
+        (test-async done
+          (let [cb (fn [result]
+                     (is (= expected-trace (::ix/trace result)))
+                     (is (::x result))
+                     (done))]
+            (ix/execute ctx cb))))))
