@@ -283,19 +283,18 @@
                    (done))]
           (ix/execute ixs $ctx cb))))))
 
-#_(deftest reduced-context-stops-enter-chain-processing
-    (let [ixs [{:name :reducer :enter reduced} ix]
-          ctx (ix/initialize ixs {::ix/trace [] ::x true})
-          expected-trace [[:reducer :enter]
-                          [:reducer :leave]]]
-      (testing "sync"
-        (let [result (ix/execute ctx)]
-          (is (= expected-trace (::ix/trace result)))
-          (is (::x result))))
-      (testing "async"
-        (test-async done
-          (let [cb (fn [result]
-                     (is (= expected-trace (::ix/trace result)))
-                     (is (::x result))
-                     (done))]
-            (ix/execute ctx cb))))))
+(deftest reduced-context-stops-enter-chain-processing
+  (let [ixs [{:name :reducer :enter reduced} ix]
+        expected-trace [[:reducer :enter]
+                        [:reducer :leave]]]
+    (testing "sync"
+      (let [result (ix/execute ixs $ctx)]
+        (is (= expected-trace (::ix/trace result)))
+        (is (::x result))))
+    (testing "async"
+      (test-async done
+        (let [cb (fn [result]
+                   (is (= expected-trace (::ix/trace result)))
+                   (is (::x result))
+                   (done))]
+          (ix/execute ixs $ctx cb))))))
