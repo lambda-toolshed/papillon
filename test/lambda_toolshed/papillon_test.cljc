@@ -20,6 +20,8 @@
                  :leave #(update % :leave (fnil inc 0))
                  :error #(update % :error (fnil inc 0))})
 
+(def $ctx {::ix/trace [] ::x true})
+
 (deftest enqueue
   (testing "enqueues interceptors to an empty context"
     (let [ixs [{:enter identity}]
@@ -44,10 +46,10 @@
       (is (empty? (ctx ::ix/queue))))))
 
 (deftest baseline
-  (let [ctx (ix/initialize [ix-counter] {::ix/trace [] ::x true})
+  (let [ixs [ix-counter]
         expected-trace [[:ix-counter :enter] [:ix-counter :leave]]]
     (testing "sync"
-      (let [result (ix/execute ctx)]
+      (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
         (is (= 1 (:enter result)))
         (is (= 1 (:leave result)))
@@ -62,14 +64,13 @@
                    (is (nil? (:error result)))
                    (is (::x result))
                    (done))]
-          (ix/execute ctx cb))))))
+          (ix/execute ixs $ctx cb))))))
 
 (deftest allows-for-empty-chain-of-interceptors
   (let [ixs []
-        ctx (ix/initialize ixs {::ix/trace [] ::x true})
         expected-trace []]
     (testing "sync"
-      (let [result (ix/execute ctx)]
+      (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
         (is (::x result))))
     (testing "async"
@@ -78,14 +79,13 @@
                    (is (= expected-trace (::ix/trace result)))
                    (is (::x result))
                    (done))]
-          (ix/execute ctx cb))))))
+          (ix/execute ixs $ctx cb))))))
 
 (deftest allows-for-interceptor-chain-of-only-enters
   (let [ixs [{:name :ix :enter identity}]
-        ctx (ix/initialize ixs {::ix/trace [] ::x true})
         expected-trace [[:ix :enter] [:ix :leave]]]
     (testing "sync"
-      (let [result (ix/execute ctx)]
+      (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
         (is (::x result))))
     (testing "async"
@@ -94,14 +94,13 @@
                    (is (= expected-trace (::ix/trace result)))
                    (is (::x result))
                    (done))]
-          (ix/execute ctx cb))))))
+          (ix/execute ixs $ctx cb))))))
 
 (deftest allows-for-interceptor-chain-of-only-leaves
   (let [ixs [{:name :ix :leave identity}]
-        ctx (ix/initialize ixs {::ix/trace [] ::x true})
         expected-trace [[:ix :enter] [:ix :leave]]]
     (testing "sync"
-      (let [result (ix/execute ctx)]
+      (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
         (is (::x result))))
     (testing "async"
@@ -110,14 +109,13 @@
                    (is (= expected-trace (::ix/trace result)))
                    (is (::x result))
                    (done))]
-          (ix/execute ctx cb))))))
+          (ix/execute ixs $ctx cb))))))
 
 (deftest allows-for-interceptor-chain-of-only-errors
   (let [ixs [{:name :ix :error identity}]
-        ctx (ix/initialize ixs {::ix/trace [] ::x true})
         expected-trace [[:ix :enter] [:ix :leave]]]
     (testing "sync"
-      (let [result (ix/execute ctx)]
+      (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
         (is (::x result))))
     (testing "async"
@@ -126,33 +124,31 @@
                    (is (= expected-trace (::ix/trace result)))
                    (is (::x result))
                    (done))]
-          (ix/execute ctx cb))))))
+          (ix/execute ixs $ctx cb))))))
 
 (deftest exception-semantics-are-preserved
   (let [ixs [ix-throw-on-enter]
-        ctx (ix/initialize ixs {::ix/trace [] ::x true})
         expected-trace [[:ix :enter] [:ix :error]]]
     (testing "sync"
       (is (thrown-with-msg?
            #?(:clj clojure.lang.ExceptionInfo :cljs ExceptionInfo)
            #"the exception"
-           (ix/execute ctx))))
+           (ix/execute ixs $ctx))))
     (testing "async"
       (test-async done
         (let [cb (fn [result]
                    (is (= exception result))
                    (done))]
-          (ix/execute ctx cb))))))
+          (ix/execute ixs $ctx cb))))))
 
 (deftest error-chain-is-invoked-when-enter-throws-an-exception
   (let [ixs [ix-catch ix-throw-on-enter]
-        ctx (ix/initialize ixs {::ix/trace [] ::x true})
         expected-trace [[:ix-catch :enter]
                         [:ix-throw-on-enter :enter]
                         [:ix-throw-on-enter :error]
                         [:ix-catch :error]]]
     (testing "sync"
-      (let [result (ix/execute ctx)]
+      (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
         (is (::x result))))
     (testing "async"
@@ -161,17 +157,16 @@
                    (is (= expected-trace (::ix/trace result)))
                    (is (::x result))
                    (done))]
-          (ix/execute ctx cb))))))
+          (ix/execute ixs $ctx cb))))))
 
 (deftest error-chain-is-invoked-when-leave-throws-an-exception
   (let [ixs [ix-catch ix-throw-on-leave]
-        ctx (ix/initialize ixs {::ix/trace [] ::x true})
         expected-trace [[:ix-catch :enter]
                         [:ix-throw-on-leave :enter]
                         [:ix-throw-on-leave :leave]
                         [:ix-catch :error]]]
     (testing "sync"
-      (let [result (ix/execute ctx)]
+      (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
         (is (::x result))))
     (testing "async"
@@ -180,7 +175,7 @@
                    (is (= expected-trace (::ix/trace result)))
                    (is (::x result))
                    (done))]
-          (ix/execute ctx cb))))))
+          (ix/execute ixs $ctx cb))))))
 
 (deftest interceptors-can-return-chrysalises
   (let [ixs [{:name :ix-chrysalis
@@ -188,13 +183,12 @@
                        #?(:clj (let [p (promise)] (deliver p ctx) p)
                           :cljs (js/Promise.resolve ctx)))}
              ix]
-        ctx (ix/initialize ixs {::ix/trace [] ::x true})
         expected-trace [[:ix-chrysalis :enter]
                         [:ix :enter]
                         [:ix :leave]
                         [:ix-chrysalis :leave]]]
     #?(:clj (testing "sync"
-              (let [result (ix/execute ctx)]
+              (let [result (ix/execute ixs $ctx)]
                 (is (= expected-trace (::ix/trace result)))
                 (is (::x result)))))
     (testing "async"
@@ -203,20 +197,19 @@
                    (is (= expected-trace (::ix/trace result)))
                    (is (::x result))
                    (done))]
-          (ix/execute ctx cb))))))
+          (ix/execute ixs $ctx cb))))))
 
 (deftest error-chain-is-invoked-when-enter-returns-an-exception-chrysalis
   (let [p #?(:clj (let [p (promise)] (deliver p exception) p)
              :cljs (js/Promise.resolve exception))
         ixs [ix-catch
              {:name :ix-thrown-chrysalis :enter (constantly p)}]
-        ctx (ix/initialize ixs {::ix/trace [] ::x true})
         expected-trace [[:ix-catch :enter]
                         [:ix-thrown-chrysalis :enter]
                         [:ix-thrown-chrysalis :error]
                         [:ix-catch :error]]]
     #?(:clj (testing "sync"
-              (let [result (ix/execute ctx)]
+              (let [result (ix/execute ixs $ctx)]
                 (is (= expected-trace (::ix/trace result)))
                 (is (::x result))
                 (is (= exception (::error result))))))
@@ -227,17 +220,16 @@
                    (is (::x result))
                    (is (= exception (::error result)))
                    (done))]
-          (ix/execute ctx cb))))))
+          (ix/execute ixs $ctx cb))))))
 
 (deftest lost-context-triggers-exception
   (let [ixs [ix-catch {:name :loser :enter (constantly nil)}]
-        ctx (ix/initialize ixs {::ix/trace [] ::x true})
         expected-trace [[:ix-catch :enter]
                         [:loser :enter]
                         [:loser :error]
                         [:ix-catch :error]]]
     (testing "sync"
-      (let [result (ix/execute ctx)]
+      (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
         (is (= "Context was lost at [:loser :enter]!" (ex-message (result ::error))))))
     (testing "async"
@@ -246,20 +238,19 @@
                    (is (= expected-trace (::ix/trace result)))
                    (is (= "Context was lost at [:loser :enter]!" (ex-message (result ::error))))
                    (done))]
-          (ix/execute ctx cb))))))
+          (ix/execute ixs $ctx cb))))))
 
 (deftest error-chain-is-invoked-when-leave-returns-an-exception-chrysalis
   (let [p #?(:clj (let [p (promise)] (deliver p exception) p)
              :cljs (js/Promise.resolve exception))
         ixs [ix-catch
              {:name :ix-thrown-chrysalis :leave (constantly p)}]
-        ctx (ix/initialize ixs {::ix/trace [] ::x true})
         expected-trace [[:ix-catch :enter]
                         [:ix-thrown-chrysalis :enter]
                         [:ix-thrown-chrysalis :leave]
                         [:ix-catch :error]]]
     #?(:clj (testing "sync"
-              (let [result (ix/execute ctx)]
+              (let [result (ix/execute ixs $ctx)]
                 (is (= expected-trace (::ix/trace result)))
                 (is (::x result))
                 (is (= exception (::error result))))))
@@ -270,11 +261,10 @@
                    (is (::x result))
                    (is (= exception (::error result)))
                    (done))]
-          (ix/execute ctx cb))))))
+          (ix/execute ixs $ctx cb))))))
 
 (deftest leave-chain-is-resumed-when-error-processor-removes-error-key
   (let [ixs [ix ix-catch ix-throw-on-leave]
-        ctx (ix/initialize ixs {::ix/trace [] ::x true})
         expected-trace [[:ix :enter]
                         [:ix-catch :enter]
                         [:ix-throw-on-leave :enter]
@@ -282,7 +272,7 @@
                         [:ix-catch :error]
                         [:ix :leave]]]
     (testing "sync"
-      (let [result (ix/execute ctx)]
+      (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
         (is (::x result))))
     (testing "async"
@@ -291,7 +281,7 @@
                    (is (= expected-trace (::ix/trace result)))
                    (is (::x result))
                    (done))]
-          (ix/execute ctx cb))))))
+          (ix/execute ixs $ctx cb))))))
 
 #_(deftest reduced-context-stops-enter-chain-processing
     (let [ixs [{:name :reducer :enter reduced} ix]

@@ -25,17 +25,18 @@
                  :leave #(update % :leave (fnil inc 0))
                  :error #(update % :error (fnil inc 0))})
 
+(def $ctx {::ix/trace [] ::x true})
+
 (deftest channels-as-chrysalis
   (let [ixs [{:name :ix-chrysalis
               :enter (fn [ctx] (async/go (assoc ctx ::hello true)))}
              ix]
-        ctx (ix/initialize ixs {::ix/trace [] ::x true})
         expected-trace [[:ix-chrysalis :enter]
                         [:ix :enter]
                         [:ix :leave]
                         [:ix-chrysalis :leave]]]
     #?(:clj (testing "sync"
-              (let [result (ix/execute ctx)]
+              (let [result (ix/execute ixs $ctx)]
                 (is (= expected-trace (::ix/trace result)))
                 (is (::x result)))))
     (testing "async"
@@ -44,14 +45,13 @@
                              (is (= expected-trace (::ix/trace result)))
                              (is (::x result))
                              (done))]
-                    (ix/execute ctx cb))))))
+                    (ix/execute ixs $ctx cb))))))
 
 (deftest deferred-execution-result
   (let [ixs [{:name ::hello
               :enter (fn [ctx] (async/go (assoc ctx ::hello true)))}
              {:name ::world
               :leave (fn [ctx] (assoc ctx ::world true))}]
-        ctx (ix/initialize ixs {::ix/trace [] ::x true})
         expected-trace [[::hello :enter]
                         [::world :enter]
                         [::world :leave]
@@ -59,7 +59,7 @@
     (test-async done
                 (let [c (async/chan)
                       callback (partial async/put! c)]
-                  (ix/execute ctx callback)
+                  (ix/execute ixs $ctx callback)
                   (async/go (when-let [result (async/alt! c ([ctx] ctx)
                                                           (async/timeout 10) nil)]
                               (is (= expected-trace (::ix/trace result)))

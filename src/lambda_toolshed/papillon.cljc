@@ -142,10 +142,10 @@
 
   Returns either the resulting context of executing the chain (Sync Mode) or
   nil (Async Mode)."
-  ([ctx] ; sync mode
-   {:pre [(= ::ctx (-> ctx meta :type))]}
-   (execute-sync ctx))
-  ([ctx callback] ; async mode
-   {:pre [(= ::ctx (-> ctx meta :type)) (fn? callback)]}
-   (execute-async ctx callback)
+  ([ixs ctx] ; sync mode
+   {:pre [(sequential? ixs) (map? ctx)]}
+   (execute-sync (initialize ixs ctx)))
+  ([ixs ctx callback] ; async mode
+   {:pre [(sequential? ixs) (map? ctx) (fn? callback)]}
+   (execute-async (initialize ixs ctx) callback)
    nil))
