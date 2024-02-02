@@ -16,13 +16,14 @@
              (promote [this] this)))
   ;; TODO: extend the default in cljs
   #?(:clj Object :cljs object)
-  (promote [this] (throw (ex-info "Not promoteable to an Interceptor!"
+  (promote [this] (throw (ex-info "Not possible to promote this object to an Interceptor!"
                                   {:obj this :type (type this)}))))
 
 (defprotocol Chrysalis
   (emerge
     [this]
-    [this callback] "Realize this Chrysalis (deferred value).  In the single-arity version the realized value is synchronously returned, possibly blocking while awaiting its availability; in the two-arity version blocking is not allowed and the realized value is passed to the provided callback."))
+    [this callback]
+    "Realize this Chrysalis (deferred value).  In the single-arity version the realized value is synchronously returned, possibly blocking while awaiting its availability; in the two-arity version blocking is not allowed and the realized value is passed to the provided callback."))
 
 (extend-protocol Chrysalis
   #?(:clj Object :cljs object)
@@ -41,5 +42,6 @@
    (extend-protocol Chrysalis
      js/Promise
      (emerge
-       ([this] (throw (ex-info "A deferred context cannot be resolved synchronously!" {::this this ::type (type this)})))
+       ([this] (throw (ex-info "A deferred context cannot be resolved synchronously!"
+                               {::this this ::type (type this)})))
        ([this f] (.then this f)))))

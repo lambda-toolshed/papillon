@@ -1,12 +1,12 @@
-(ns lambda-toolshed.papillon.channels-test
-  "Tests that demonstrate the opt-in ability of papillon to work seamlessly
-  with clojure.core.async channels -either as the deferred output of an interceptor
+(ns lambda-toolshed.papillon.channel-test
+  "Tests that demonstrate the opt-in ability of papillon to work seamlessly with
+  clojure.core.async channels -either as the deferred output of an interceptor
   or as the output of the overall chain execution."
   (:require
    [clojure.core.async :as async]
    [clojure.test :refer [deftest is testing]]
    [lambda-toolshed.papillon :as ix]
-   [lambda-toolshed.papillon.channels]
+   [lambda-toolshed.papillon.channel]
    [lambda-toolshed.test-utils :refer [runt! runt-fn! test-async] :include-macros true]))
 
 (def ix {:name :ix :enter identity :leave identity :error identity})
@@ -40,11 +40,11 @@
                 (is (::x result)))))
     (testing "async"
       (test-async done
-        (let [cb (fn [result]
-                   (is (= expected-trace (::ix/trace result)))
-                   (is (::x result))
-                   (done))]
-          (ix/execute ctx cb))))))
+                  (let [cb (fn [result]
+                             (is (= expected-trace (::ix/trace result)))
+                             (is (::x result))
+                             (done))]
+                    (ix/execute ctx cb))))))
 
 (deftest deferred-execution-result
   (let [ixs [{:name ::hello
@@ -57,13 +57,13 @@
                         [::world :leave]
                         [::hello :leave]]]
     (test-async done
-      (let [c (async/chan)
-            callback (partial async/put! c)]
-        (ix/execute ctx callback)
-        (async/go (when-let [result (async/alt! c ([ctx] ctx)
-                                                (async/timeout 10) nil)]
-                    (is (= expected-trace (::ix/trace result)))
-                    (is (::x result))
-                    (is (::hello result))
-                    (is (::world result)))
-                  (done))))))
+                (let [c (async/chan)
+                      callback (partial async/put! c)]
+                  (ix/execute ctx callback)
+                  (async/go (when-let [result (async/alt! c ([ctx] ctx)
+                                                          (async/timeout 10) nil)]
+                              (is (= expected-trace (::ix/trace result)))
+                              (is (::x result))
+                              (is (::hello result))
+                              (is (::world result)))
+                            (done))))))
