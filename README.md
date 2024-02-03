@@ -16,7 +16,7 @@ This library was inspired by the mix of Interceptor patterns from:
 
 ### Why this library?
 
-We use Clojure(Script) on AWS Lambdas where a number of them are triggered asynchronously without a HTTP request.  The goal of this library is to advocate for the idea of interceptors, while providing a way to use them that are independent from HTTP and applicable in a broader range of scenarios.
+Amongst other applications, we use Clojure(Script) on AWS Lambdas where a number of them are triggered asynchronously without a HTTP request.  The goal of this library is to advocate for the idea of interceptors, while providing a way to use them that are independent from HTTP and applicable in a broader range of scenarios.  We feel that interceptors have a compelling story when used in conjunction with inherently source-sink type operations -whether the source is an inbound http request or an inbound lambda event in AWS or even an outbound network request.
 
 A side goal of this is to provide the core of the execution of an interceptor queue, while keeping it open enough that it can be composed with other complimentary libraries without locking the consumer into using specific libraries required for other aspects, such as picking a logging library.
 
@@ -26,17 +26,17 @@ A side goal of this is to provide the core of the execution of an interceptor qu
 
 As mentioned above, we run ClojureScript on Node runtime for our AWS Lambdas, so we needed a solution that covers both Clojure and ClojureScript.
 
-While we are currently only targeting Clojure and ClojureScript support, as that is what we use in our deployments at work, our goal is to stick to Clojure core a much as possible to help keep the Papillon available across as many of the different Clojure runtimes as possible (e.g. Clojure.NET, ClojurErl, ClojureDart, Babashka, and more would also be welcomed).
+In addition, we want papillon to be unencumbered with additional dependencies regardless of the host environment -be it Babashka, Clojure, ClojureScript, Clojure.NET, ClojurErl, ClojureDart, etc.  Since the introduction of the Chrysalis protocol papillon supports synchronous and asynchronous operation with no dependencies beyond the core language itself.
 
 #### Interceptor focused
 
-Pedestal interceptors are fantastic, but they are part of Pedestal, and while we could have used Pedestal’s interceptor namespace only, it does have dependencies on logging in Pedestal, and the interceptors in Pedestal are not quite as isolated from the rest of Pedestal as we would have liked.
+There are multiple libraries that include support for interceptors and even a few that focus on interceptors alone.  In keeping with our goal of broad platform support and zero external depedencies, papillon is an interceptor-only library.  We focus on keeping it slim and broadly applicable to many tasks.
 
 #### Decouple the interceptors from HTTP requests.
 
 Sieppari was more focused on Interceptors only, but was based on the idea of a Request/Response model.
 
-With our goal to have interceptors be the prevalent pattern in our AWS Lambdas, we needed something that would fit with both the HTTP style of synchronous AWS Lambdas, as well as the asynchronous AWS Lambdas that consume their items from SQS queues, the idea of contorting a SQS message into a HTTP Request/Response was something we wanted to avoid.
+With our goal to have interceptors be the prevalent pattern in our AWS Lambdas, we needed something that would fit with both the HTTP style of synchronous AWS Lambdas, as well as the asynchronous AWS Lambdas that consume their items from SQS queues, the idea of contorting a SQS message into a HTTP Request/Response was something we wanted to avoid.  We have found papillon is well suited to many source-to-sink-to-source type operations: HTTP request handling and issuing HTTP requests are but two example.
 
 #### Minimal
 
@@ -56,25 +56,18 @@ Given that the control flow is data, and available on the context, it allowed us
 
 #### Clojure Core Libraries Based
 
-We have worked hard to limit your exposure to transitive dependencies.  The core of papillon has zero dependencies other than Clojure (or Clojurescript) itself.  Even async support is expressed with callbacks so as to limit the imposed requirement for something like clojure.core.async.  Nevertheless, papillon provides opt-in support for core.async and extending papillon to support other async libs (e.g. manifold or promesa) is a simple matter of extending the Chrysalis protocol's emerge function.
-
-Get more discussion on Interceptors starting again
-We don’t expect that this will become the next big hit and everyone will start using this in their code, but we do hope that by publishing and promoting “Yet Another Interceptor Library”
-
-> Side Note:  I almost did name it yail (Yet Another Interceptor Library), but it didn't feel like it hit 'yet another' level so happy to keep that one available for someone else to use in the hope that the idea of interceptors gets to that point 🤞.
-
-Those of us in our group who were pushing this project forward think interceptors are a valuable and a “well kept secret” of the Clojure ecosystem, and would love to see more usages of them in the community.
+As noted above, papillon does not expose you to transitive dependencies.  The core of papillon has zero dependencies other than core Clojure language constructs.  Even async support is expressed with callbacks so as to limit the imposed requirement for something like clojure.core.async.  Nevertheless, papillon provides opt-in support for core.async and extending papillon to support other async libs (e.g. manifold or promesa) is a simple matter of extending the Chrysalis protocol's emerge function.
 
 We also would love to see some more abuses of interceptors as well, because it helps find the edges of what can(not) and should (not) be done with them.
 
 #### Async and Sync support
 We want papillon to support sync and async use cases and we find different interpretations of what that could mean, roughly divided into two arenas.
-1. Papillon allows interceptors to return deferred computations of the updated context.  An interceptor chain can contain a mix of interceptors that produce deferred results and interceptors that produce realized results; a given interceptor can even vary its return type conditionally.  We call an interceptor that returns a deferred type (more on that later) an "async interceptor."  Papillon always realizes the deferred result of an async interceptor before invoking the next interceptor in the chain.
+1. Papillon allows interceptors to return deferred computations of the updated context.  An interceptor chain can contain a mix of interceptors that produce deferred results and interceptors that produce realized results; a given interceptor can even vary its return type conditionally.  We call an interceptor that returns a deferred type (more on that later) an "async interceptor."  By necessity, papillon always realizes the deferred result of an async interceptor before invoking the next interceptor in the chain.
 2. Papillon allows the result of executing the entire interceptor chain to be deferred, invoking a user-supplied callback function upon completion.  We call this an "async chain."
 
 These two approaches can be mixed and matched:
 
-* Sync chain and sync interceptors: the baseline.  Appropriate for computation-focused chains or situations where chain execution context has been managed by the developer prior to invocation.
+* Sync chain and sync interceptors: the baseline.  Appropriate for computation-focused chains or situations where the chain execution context has been managed by the developer prior to invocation.
 * Sync chain and async interceptors: useful for testing async interceptors and for reusing (possibly) async interceptors transparently in sync chains.
 * Async chain and sync interceptors: useful for reusing sync interceptors transparently in async chains.
 * Async chain and async interceptors: essentials for single-threaded environments like ClojureScript where otherwise blocking operations must yield to the event loop.
@@ -91,10 +84,12 @@ The Chrysalis protocol is central to papillon's async support.  It is used by pa
 ```
 Note how the single-arity version blocks while the two-arity does not.  All implementations of Chrysalis must observe this restriction!
 
-Executing a chain asynchronously requires that you provide a callback function when invoking `papillon/execute`.  Here's an example using a promise to convey the result to the caller:
+Executing a chain asynchronously requires that you provide a callback function when invoking `papillon/execute`.  Here's a Clojure example using a promise to convey the result asynchronously to the caller:
 
 ``` clojure
-
+(let [p (promise)]
+  (ix/execute ixs ctx (fn [ctx] (deliver p ctx)))
+  p)
 ```
 
 ## How it works
@@ -148,7 +143,7 @@ The interceptor stack will continue to be consumed through the `:error` stage un
 
 ### Asynchronous Interceptors
 
-The executor handles Asynchronous items by checking to see if the return value of an interceptor is a `ReadPort`.
+Papillon always uses the `emerge` function of the Chrysalis protocol to realize deferred results *before* calling the next interceptor in the chain.  When the chain is being executed asynchronously (implicit when a callback function is provided to `execute`) and an interceptor returns a deferred value (a _chrysalis_), the two-arity `emerge` is used to asynchronously resolve the _chrysalis_ and resume the chain execution.  When the chain is being executed synchronously (implicit when no callback function is provided to `execute`) and an interceptor returns a chrysalis, the single arity `emerge` is used to synchronously resolve the chrysalis (likely blocking) and return it so that papillon can continue executing the chain.  Because synchronous chain execution with even one asynchronous interceptor requires blocking, this combination is inherently not possible _in ClojureScript_.
 
 #### Errors in asynchronous interceptors
 
@@ -156,13 +151,7 @@ To signal an error in an asynchronous interceptor, the executor cannot just catc
 
 Because of this, the Interceptor library expects the asynchronous interceptors to catch any errors themselves and return the error as its return value.
 
-After the executor "unwraps" the asynchronous result, if it finds an error in the unwrapped result then it will add the error to the context under `:lambda-toolshed.papillon/error` key, as if it had been caught from a synchronous interceptor.
-
-#### ClojureScript and JavaScript interop
-
-If you are in ClojureScript, and are in Promise land (Editor's Note: this is drastically different from The Promised Land, and the two should not be confused), you can import the namespace `lambda-toolshed.papillon.async` which will have a Promise implement `ReadPort` and turn the Promise into something that can be read in the same way as a channel.
-
-This is done by using `cljs.core.async.interop/p->c`, taking the `PromiseChannel` returned from that and turning it into a channel with the result being a single item on the channel.
+If the result of "emerging" the chrysalis (deferred result) yields an exception, papillon will add the error to the context under `:lambda-toolshed.papillon/error` key, as if it had been caught from a synchronous interceptor.
 
 ## Examples and Other ways to extend usage
 
