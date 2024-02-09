@@ -36,7 +36,7 @@ There are multiple libraries that include support for interceptors and even a fe
 
 Sieppari was more focused on Interceptors only, but was based on the idea of a Request/Response model.
 
-With our goal to have interceptors be the prevalent pattern in our AWS Lambdas, we needed something that would fit with both the HTTP style of synchronous AWS Lambdas, as well as the asynchronous AWS Lambdas that consume their items from SQS queues, the idea of contorting a SQS message into a HTTP Request/Response was something we wanted to avoid.  We have found papillon is well suited to many source-to-sink-to-source type operations: HTTP request handling and issuing HTTP requests are but two example.
+With our goal to have interceptors be the prevalent pattern in our AWS Lambdas, we needed something that would fit with both the HTTP style of synchronous AWS Lambdas, as well as the asynchronous AWS Lambdas that consume their items from SQS queues, the idea of contorting a SQS message into a HTTP Request/Response was something we wanted to avoid.  We have found papillon is well suited to many source-to-sink-to-source type operations: HTTP request handling and issuing HTTP requests are but two examples.
 
 #### Minimal
 
