@@ -49,17 +49,17 @@
   to invoking this function."
   [ctx tag candidate-ctx]
   (cond
-    (-> candidate-ctx reduced?) (-> ctx
-                                    (transition tag (unreduced candidate-ctx))
-                                    clear-queue)
-    (-> candidate-ctx error?) (-> ctx
-                                  (assoc ::error candidate-ctx)
-                                  (assoc ::stage :error)
-                                  clear-queue)
-    (-> candidate-ctx context?) (let [{::keys [error stage]} candidate-ctx]
-                                  (if (and (not error) (= stage :error))
-                                    (assoc candidate-ctx ::stage :leave)
-                                    candidate-ctx))
+    (reduced? candidate-ctx) (-> ctx
+                                 (transition tag (unreduced candidate-ctx))
+                                 clear-queue)
+    (error? candidate-ctx) (-> ctx
+                               (assoc ::error candidate-ctx
+                                      ::stage :error)
+                               clear-queue)
+    (context? candidate-ctx) (let [{::keys [error stage]} candidate-ctx]
+                               (if (and (not error) (= stage :error))
+                                 (assoc candidate-ctx ::stage :leave)
+                                 candidate-ctx))
     :else (let [e (ex-info (fmt "Context was lost at %s!" tag)
                            {::tag tag
                             ::ctx ctx
