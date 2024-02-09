@@ -24,9 +24,9 @@
    (-> ctx
        (vary-meta assoc :type ::ctx)
        (assoc ::queue #?(:clj clojure.lang.PersistentQueue/EMPTY
-                         :cljs cljs.core/PersistentQueue.EMPTY))
-       (assoc ::stack [])
-       (assoc ::stage :enter)
+                         :cljs cljs.core/PersistentQueue.EMPTY)
+              ::stack []
+              ::stage :enter)
        (enqueue ixs))))
 
 (defn- error?
