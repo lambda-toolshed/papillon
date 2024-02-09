@@ -3,22 +3,11 @@ All notable changes to this project will be documented in this file. This change
 
 ## [Unreleased]
 ### Changed
-- Add a new arity to `make-widget-async` to provide a different widget shape.
-
-## [0.1.1] - 2022-01-07
-### Changed
-- Documentation on how to make the widgets.
-
-### Removed
-- `make-widget-sync` - we're all async, all the time.
-
-### Fixed
-- Fixed widget maker to keep working when daylight savings switches over.
-
-## 0.1.0 - 2022-01-07
+- The auto-naming of unnamed interceptors has changed to use the hash of the interceptor instead of its ordinal position in the initial queue.  Position is not easily defined for interceptors queued after the initial execution.
 ### Added
-- Files from the new template.
-- Widget maker public API - `make-widget-sync`.
+- The Chrysalis protocol is used by papillon to realize deferred contexts between interceptor transitions.
+- The execution of the interceptor chain can now be run asynchronously or synchronously.
+- If a var is queued (instead of an actual map interceptor), it will be dereferenced before being queued.
 
 [Unreleased]: https://github.com/lambda-toolshed/papillon/compare/0.1.1...HEAD
 [0.1.1]: https://github.com/lambda-toolshed/papillon/compare/0.1.0...0.1.1
