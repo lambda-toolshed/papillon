@@ -56,9 +56,9 @@ Given that the control flow is data, and available on the context, it allowed us
 
 #### Clojure Core Libraries Based
 
-As noted above, papillon does not expose you to transitive dependencies.  The core of papillon has zero dependencies other than core Clojure language constructs.  Even async support is expressed with callbacks so as to limit the imposed requirement for something like clojure.core.async.  Nevertheless, papillon provides opt-in support for core.async and extending papillon to support other async libs (e.g. manifold or promesa) is a simple matter of extending the Chrysalis protocol's emerge function.
+As noted above, papillon does not expose you to transitive dependencies.  The core of papillon has zero dependencies other than core Clojure language constructs.  Even async support is expressed with callbacks so as to limit the imposed requirement for something like clojure.core.async.  Nevertheless, papillon provides opt-in support for core.async and extending papillon to support other async libs (e.g. manifold or promesa or Java CompletableFuture) is a simple matter of extending the Chrysalis protocol's emerge function.
 
-We also would love to see some more abuses of interceptors as well, because it helps find the edges of what can(not) and should (not) be done with them.
+We also would love to see some more abuses of interceptors as well, because it helps find the edges of what can(not) or should (not) be done with them.
 
 #### Async and Sync support
 We want papillon to support sync and async use cases and we find different interpretations of what that could mean, roughly divided into two arenas.
@@ -110,7 +110,7 @@ Sometimes things go wrong, and the caterpillar eats something that didn't agree 
 
 ### The Spec
 
-Interceptors are represented as a map with the optional keys of `:enter`, `:leave`, and `:error`.  None of the keys are required to be on an interceptor map, and if no truthy value for the key being checked is found on the interceptor map, the executor will continue its processing skipping over the interceptor for that stage.  A `:name` can also provided, in which case there are some affordances for tracing the interceptor execution by name.
+Interceptors are represented as a map with the optional keys of `:enter`, `:leave`, and `:error`.  None of the keys are required to be on an interceptor map, and if no truthy value for the key being checked is found on the interceptor map, the executor will supply a no-op function for that stage.  A `:name` can also provided, in which case there are some affordances for tracing the interceptor execution by name.
 
 The idea of sticking to a map instead of a record is that if the interceptor is a map, consumers can attach any other data to the interceptor, which the executor will ignored instead of actively discarding when converting to a record, allowing the extra keys and values on the interceptor map to be accessible while it exists on the queue or the stack in the context.
 
@@ -118,24 +118,24 @@ The idea of sticking to a map instead of a record is that if the interceptor is 
 
 ##### Empty Queue of Interceptors
 
-The enter stage is considered completed when there are no more interceptors on the queue; at this point papillon will start processing the interceptor chain from the accumulated stack.
+The `:enter` stage is considered complete when there are no more interceptors on the queue; at this point papillon will start processing the `:leave` stage of the interceptor chain from the accumulated stack.
 
 ##### Reduced Context
 
-If the returned context from an `:enter` function is a reduced value, this is treated as a signal to stop further processing of the :enter chain and proceed to start processing the interceptor stack through the `:leave` stage.
+If the returned context from an `:enter` function is a reduced value, this is treated as a signal to stop further processing of the `:enter` stage and to start processing the `:leave` stage of the interceptor stack.
 
 ##### Raising, or Returning, an Error
 
-When an interceptor function throws or returns an error, e.g. ExceptionInfo, Throwable in Clojure, js/Error in Clojurescript, the queue is cleared from the context, the error is added under the `:lambda-toolshed.papillon/error` key, and the stack starts getting processed through the `:error` stage.
+When an interceptor function throws or returns an error, e.g. ExceptionInfo, Throwable in Clojure, js/Error in Clojurescript, the queue, the error is added under the `:lambda-toolshed.papillon/error` key, and papillon begins processing the `:error` stage of the accumulated/remaining stack.  When papillon is processing the `:enter` stage of the queue, the accumulated stack will have the "current" interceptor at the head and exceptions will cause the `:error` stage of the same interceptor to be invoked.  However, when papillon is processing the `:leave` stage the current interceptor is removed from the stack prior to invoking the function and exceptions will thus advance to the next ("outward") interceptor.
 
-The interceptor stack will continue to be consumed through the `:error` stage until the error is marked as resolved by removing the `:lambda-toolshed.papillon/error` key from the context map.  Once there is no error in the context, processing will proceed through the `:leave` stage until another error is returned or gets thrown in a synchronous interceptor.
+The interceptor stack will continue to be consumed through the `:error` stage until the error is resolved by removing the `:lambda-toolshed.papillon/error` key from the context map.  Once there is no error in the context, processing will return to the `:leave` stage of the stack.
 
 #### The Context map
 
 ##### Keys
 
-| key                                   | description                                                                                                                                                                                                                                                                                                                                                                                                                |
-| ------                                | --------------                                                                                                                                                                                                                                                                                                                                                                                                             |
+| key                               | description                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------                            | --------------                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `:lambda-toolshed.papillon/queue` | The queue of interceptors.  This gets initialized with the interceptors passed to `execute`, but can be managed if you know what you are doing.                                                                                                                                                                                                                                                                            |
 | `:lambda-toolshed.papillon/stack` | The stack of interceptors for traversing back through the chain of interceptors encountered.                                                                                                                                                                                                                                                                                                                               |
 | `:lambda-toolshed.papillon/error` | This key should have the error information associated with it.  This key signifies we are in an error state, and interceptors with `:error` key will be processed, either for them to clean up some state (open connections, etc.) or attempt to handle and resolve the error and return nicely.  A few examples might be: turn the error into 500 HTTP response; put original message and error onto an error queue; etc. |
