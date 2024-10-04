@@ -3,20 +3,6 @@
             [clojure.core.async.impl.protocols :as impl]
             [clojure.test :as test]))
 
-(defmacro go-test
-  "Asynchronously execute the test body (in a go block)"
-  [& body]
-  (if (:ns &env)
-    ;; In ClojureScript we execute the body as a test/async body inside a go block.
-    `(let [c# (async/promise-chan)
-           obj# (test/async done# (async/go (let [res# (do ~@body)] (async/>! c# res#)) (done#)))]
-       (reify
-         cljs.test/IAsyncTest
-         cljs.core/IFn
-         (~'-invoke [_# done2#] (obj# done2#))))
-    ;; In Clojure we block awaiting the completion of the async test block
-    `(async/<!! (async/go (do ~@body)))))
-
 (defmacro test-async
   "Asynchronously execute the test body."
   [done & body]
