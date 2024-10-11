@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file. This change
 ## [Unreleased]
 ### Changed
 - The auto-naming of unnamed interceptors has changed to use the hash of the interceptor instead of its ordinal position in the initial queue.  Position is not easily defined for interceptors queued after the initial execution.
+- Transitions from the leave stage to the error stage will first consider the offending interceptor before consuming the stack.
 ### Added
 - The Chrysalis protocol is used by papillon to realize deferred contexts between interceptor transitions.
 - The execution of the interceptor chain can now be run asynchronously or synchronously.

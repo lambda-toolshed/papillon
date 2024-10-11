@@ -164,6 +164,7 @@
         expected-trace [[:ix-catch :enter]
                         [:ix-throw-on-leave :enter]
                         [:ix-throw-on-leave :leave]
+                        [:ix-throw-on-leave :error]
                         [:ix-catch :error]]]
     (testing "sync"
       (let [result (ix/execute ixs $ctx)]
@@ -248,6 +249,7 @@
         expected-trace [[:ix-catch :enter]
                         [:ix-thrown-chrysalis :enter]
                         [:ix-thrown-chrysalis :leave]
+                        [:ix-thrown-chrysalis :error]
                         [:ix-catch :error]]]
     #?(:clj (testing "sync"
               (let [result (ix/execute ixs $ctx)]
@@ -269,6 +271,7 @@
                         [:ix-catch :enter]
                         [:ix-throw-on-leave :enter]
                         [:ix-throw-on-leave :leave]
+                        [:ix-throw-on-leave :error]
                         [:ix-catch :error]
                         [:ix :leave]]]
     (testing "sync"

@@ -104,27 +104,43 @@ This is the hungry caterpillar idea.
 
 The caterpillar starts at the top of the sandwich, and eats its way down through all the layers of the sandwich, some of which may be empty like the holes in some delicious Swiss cheese, or items only on one side of the sandwich; then when the caterpillar has exited the bottom, it chomps its way back up to the top on the other half of the sandwich resulting in a well fed caterpillar that is now a beautiful butterfly.
 
-Sometimes things go wrong, and the caterpillar eats something that didn't agree with it making it sick.  In that case, the caterpillar upon exiting that layer of the sandwich scurries to the outside of the sandwich, and starts walking up the outside crust taking nibbles of things here and there until something settles its indigestion, at which point it goes back into the sandwich once again, and continues to eat, or otherwise climbing back up the outside of the sandwich to the top where you get a sick caterpillar waiting for you.
+Sometimes things go wrong, and the caterpillar eats something that didn't agree with it making it sick.  In that case, the caterpillar scurries to the outside of the sandwich, and starts walking up the outside crust taking nibbles of things here and there until something settles its indigestion, at which point it goes back into the sandwich once again, and continues to eat, or otherwise climbing back up the outside of the sandwich to the top where you get a sick caterpillar waiting for you.
 
 <img src="./papillon-sandwich.png" alt="Drawing of a caterpillar atop a giant stacked sandwich with ingredients that go across the whole sandwich, and some that are on half only." height="1200"/>
 
 ### The Spec
 
-Interceptors are represented as a map with the optional keys of `:enter`, `:leave`, and `:error`.  None of the keys are required to be on an interceptor map, and if no truthy value for the key being checked is found on the interceptor map, the executor will supply a no-op function for that stage.  A `:name` can also provided, in which case there are some affordances for tracing the interceptor execution by name.
+Interceptors are represented as a map with the optional keys of `:enter`, `:leave`, and `:error`.  None of the keys are required to be on an interceptor map; if no function value for the current stage is found in the interceptor map, the chain executor will move to the next interceptor.  A `:name` can also provided, in which case there are some affordances for tracing the interceptor execution by name.
 
 The idea of sticking to a map instead of a record is that if the interceptor is a map, consumers can attach any other data to the interceptor, which the executor will ignored instead of actively discarding when converting to a record, allowing the extra keys and values on the interceptor map to be accessible while it exists on the queue or the stack in the context.
 
-#### Completing the Enter Stage
+#### The :enter Stage
+The `:enter` stage is the initial stage of the chain.  While in the `:enter` stage the chain is executed by invoking interceptors as they are removed the queue and placed on the stack.
 
-##### Empty Queue of Interceptors
+There are three ways to transition from the `:enter` stage:
+1. When the queue of remaining interceptors is empty, execution transitions to the `:leave` stage.
+2. When the interceptor returns a `reduced?` value, the queue is cleared and execution transitions to the `:leave` stage.
+3. When the interceptor throws (sync mode) or returns (async mode) an exception, execution transitions to the `:error` stage.
 
-The `:enter` stage is considered complete when there are no more interceptors on the queue; at this point papillon will start processing the `:leave` stage of the interceptor chain from the accumulated stack.
+#### The :leave Stage
+While in the `:leave` stage, the chain is executed by invoking interceptors as they are popped off the stack.
 
-##### Reduced Context
+There are two ways to transition from the `:leave` stage:
+1. When the interceptor throws (sync mode) or returns (async mode) an exception, chain execution transitions to the `:error` stage.
+2. When the stack is empty, chain execution stops.
 
-If the returned context from an `:enter` function is a reduced value, this is treated as a signal to stop further processing of the `:enter` stage and to start processing the `:leave` stage of the interceptor stack.
+#### The :error Stage
+While in the `:error` stage, the chain is normally executed by invoking interceptors as they are popped off the stack. 
 
-##### Raising, or Returning, an Error
+There are two ways to transition from the `:leave` stage:
+1. When the interceptor clears the error at the `:lambda-toolshed.papillon/error` key, chain execution transitions to the `:leave` stage.
+2. When the stack is empty, chain execution stops.
+
+When transitioning from the `:leave` stage to the `:error` stage, chain execution first invokes the offending interceptor before consuming the stack.
+
+When the stack is empty, the chain itself has been completely executed.
+
+##### Notes on Raising, or Returning, an Error
 
 When an interceptor function throws or returns an error, e.g. ExceptionInfo, Throwable in Clojure, js/Error in Clojurescript, the queue, the error is added under the `:lambda-toolshed.papillon/error` key, and papillon begins processing the `:error` stage of the accumulated/remaining stack.  When papillon is processing the `:enter` stage of the queue, the accumulated stack will have the "current" interceptor at the head and exceptions will cause the `:error` stage of the same interceptor to be invoked.  However, when papillon is processing the `:leave` stage the current interceptor is removed from the stack prior to invoking the function and exceptions will thus advance to the next ("outward") interceptor.
 

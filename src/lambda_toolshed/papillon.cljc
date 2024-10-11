@@ -70,7 +70,7 @@
   "Move to the next interceptor in the interceptor chain within `ctx`.  Returns
   a tuple of the resulting context, the current interceptor and a descriptive
   tag of the move operation.  Returns nil if the chain has been consumed."
-  [{::keys [queue stack stage trace] :as ctx}]
+  [{::keys [queue stack stage trace handler] :as ctx}]
   (case stage
     :enter (if-let [ix (peek queue)]
              (let [tag [(identify ix) stage]
@@ -80,13 +80,22 @@
                          trace (update ::trace conj tag))]
                [ctx ix tag])
              (-> ctx (assoc ::stage :leave) move))
-    (:error :leave) (if-let [ix (peek stack)]
-                      (let [tag [(identify ix) stage]
-                            ctx (cond-> ctx
-                                  true (update ::stack pop)
-                                  trace (update ::trace conj tag))]
-                        [ctx ix tag])
-                      nil)))
+    :leave (if-let [ix (peek stack)]
+             (let [tag [(identify ix) stage]
+                   ctx (cond-> ctx
+                         true (update ::stack pop)
+                         true (assoc ::handler ix)
+                         trace (update ::trace conj tag))]
+               [ctx ix tag])
+             nil)
+    :error (if-let [ix (or handler (peek stack))]
+             (let [tag [(identify ix) stage]
+                   ctx (cond-> ctx
+                         (not handler) (update ::stack pop)
+                         handler (dissoc ::handler)
+                         trace (update ::trace conj tag))]
+               [ctx ix tag])
+             nil)))
 
 (defn- evaluate
   "Evaluate the interceptor `ix` with the context `ctx`."
