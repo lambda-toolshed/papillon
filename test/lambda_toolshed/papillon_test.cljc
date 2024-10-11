@@ -8,6 +8,7 @@
 (def exception (ex-info "the exception" {}))
 (def ix-throw-on-enter {:name :ix-throw-on-enter :enter (fn [_] (throw exception))})
 (def ix-throw-on-leave {:name :ix-throw-on-leave :leave (fn [_] (throw exception))})
+(def ix-throw-on-error {:name :ix-throw-on-error :error (fn [_] (throw exception))})
 (def ix-catch
   {:name :ix-catch
    :error (fn [{error ::ix/error :as ctx}]
@@ -290,6 +291,29 @@
   (let [ixs [{:name :reducer :enter reduced} ix]
         expected-trace [[:reducer :enter]
                         [:reducer :leave]]]
+    (testing "sync"
+      (let [result (ix/execute ixs $ctx)]
+        (is (= expected-trace (::ix/trace result)))
+        (is (::x result))))
+    (testing "async"
+      (test-async done
+        (let [cb (fn [result]
+                   (is (= expected-trace (::ix/trace result)))
+                   (is (::x result))
+                   (done))]
+          (ix/execute ixs $ctx cb))))))
+
+(deftest error-chain-is-continued-on-consecutive-throws
+  (let [ixs [ix ix-catch ix-throw-on-error ix-throw-on-leave]
+        expected-trace [[:ix :enter]
+                        [:ix-catch :enter]
+                        [:ix-throw-on-error :enter]
+                        [:ix-throw-on-leave :enter]
+                        [:ix-throw-on-leave :leave]
+                        [:ix-throw-on-leave :error]
+                        [:ix-throw-on-error :error]
+                        [:ix-catch :error]
+                        [:ix :leave]]]
     (testing "sync"
       (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
