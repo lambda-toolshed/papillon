@@ -1,14 +1,14 @@
 {:paths ["src" "resources"]
  :deps {org.clojure/clojure {:mvn/version "1.11.1"}
-        org.clojure/clojurescript {:mvn/version "1.11.121"}
-        org.clojure/core.async {:mvn/version "1.6.681"}}
+        org.clojure/clojurescript {:mvn/version "1.11.132"}}
  :aliases {:build {:deps {io.github.seancorfield/build-clj
                           {:git/tag "v0.9.2" :git/sha "9c9f078"}}
                    :ns-default build}
            :dev {:extra-paths ["dev"]
                  :jvm-opts ["-DENVIRONMENT=development"]}
            :test {:extra-paths ["test"]
-                  :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}}}
+                  :extra-deps {org.clojure/core.async {:mvn/version "1.6.681"}
+                               org.clojure/test.check {:mvn/version "1.1.1"}}}
            :project/test-cljs {:main-opts ["-m" "cljs-test-runner.main"]
                                :extra-deps {olical/cljs-test-runner {:mvn/version "3.8.0"}}
                                :jvm-opts ["-DENVIRONMENT=test"]}

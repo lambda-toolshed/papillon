@@ -1,4 +1,4 @@
-(ns lambda-toolshed.papillon.channels
+(ns lambda-toolshed.papillon.channel
   (:require [clojure.core.async :as async]
             [clojure.core.async.impl.channels :as channels]
             [lambda-toolshed.papillon.protocols :as protocols]))
