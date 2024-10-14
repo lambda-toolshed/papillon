@@ -62,7 +62,7 @@
                             ::candidate-ctx candidate-ctx})]
             (transition ctx tag e))))
 
-(defn- move*
+(defn- move
   "Move to the next interceptor in the interceptor chain within `ctx`.  Returns
   a tuple of the resulting context, the current interceptor and a descriptive
   tag of the move operation.  Returns nil if the chain has been consumed."
@@ -93,34 +93,27 @@
                nil)
              (recur (assoc ctx ::stage :error)))))
 
-(defn- move
+(defn- evaluate
   [ctx]
-  (when-let [[ctx ix stage] (move* ctx)]
+  (when-let [[ctx ix stage] (move ctx)]
     (let [tag [(identify ix) stage]
           ctx (update ctx ::trace (fn [t] (when t
-                                            (if (= :final stage) t (conj t tag)))))]
-      [ctx (ix stage) tag])))
-
-(defn- evaluate
-  "Evaluate the interceptor `ix` with the context `ctx`."
-  [f ctx]
-  (if f
-    (try (f ctx) (catch #?(:clj Throwable :cljs :default) e e))
-    ctx))
+                                            (if (= :final stage) t (conj t tag)))))
+          f (or (ix stage) identity)
+          obj (try (f ctx) (catch #?(:clj Throwable :cljs :default) e e))]
+      [ctx obj tag])))
 
 (defn- execute-sync
   [ctx]
-  (if-let [[ctx f tag] (move ctx)]
-    (let [obj (evaluate f ctx)
-          jump (partial transition ctx tag)]
+  (if-let [[ctx obj tag] (evaluate ctx)]
+    (let [jump (partial transition ctx tag)]
       (recur (-> obj emerge jump)))
     (if-let [e (::error ctx)] (throw e) ctx)))
 
 (defn- execute-async
   [ctx callback]
-  (if-let [[ctx f tag] (move ctx)]
-    (let [obj (evaluate f ctx)
-          jump (partial transition ctx tag)
+  (if-let [[ctx obj tag] (evaluate ctx)]
+    (let [jump (partial transition ctx tag)
           continue (comp #(execute-async % callback) jump)]
       (emerge obj continue))
     (callback (or (::error ctx) ctx))))
