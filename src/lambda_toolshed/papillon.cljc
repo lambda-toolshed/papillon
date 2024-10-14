@@ -53,69 +53,73 @@
                                  (transition tag (unreduced candidate-ctx))
                                  clear-queue)
     (error? candidate-ctx) (-> ctx
-                               (assoc ::error candidate-ctx
-                                      ::stage :error)
+                               (assoc ::error candidate-ctx)
                                clear-queue)
-    (context? candidate-ctx) (let [{::keys [error stage]} candidate-ctx]
-                               (if (and (not error) (= stage :error))
-                                 (assoc candidate-ctx ::stage :leave)
-                                 candidate-ctx))
+    (context? candidate-ctx) candidate-ctx
     :else (let [e (ex-info (fmt "Context was lost at %s!" tag)
                            {::tag tag
                             ::ctx ctx
                             ::candidate-ctx candidate-ctx})]
             (transition ctx tag e))))
 
-(defn- move
+(defn- move*
   "Move to the next interceptor in the interceptor chain within `ctx`.  Returns
   a tuple of the resulting context, the current interceptor and a descriptive
   tag of the move operation.  Returns nil if the chain has been consumed."
-  [{::keys [queue stack stage trace handler] :as ctx}]
+  [{::keys [queue stack stage error handled?] :as ctx}]
   (case stage
     :enter (if-let [ix (peek queue)]
-             (let [tag [(identify ix) stage]
-                   ctx (cond-> ctx
-                         true (update ::queue pop)
-                         true (update ::stack conj ix)
-                         trace (update ::trace conj tag))]
-               [ctx ix tag])
-             (-> ctx (assoc ::stage :leave) move))
-    :leave (if-let [ix (peek stack)]
-             (let [tag [(identify ix) stage]
-                   ctx (cond-> ctx
-                         true (update ::stack pop)
-                         true (assoc ::handler ix)
-                         trace (update ::trace conj tag))]
-               [ctx ix tag])
-             nil)
-    :error (if-let [ix (or handler (peek stack))]
-             (let [tag [(identify ix) stage]
-                   ctx (cond-> ctx
-                         (not handler) (update ::stack pop)
-                         handler (dissoc ::handler)
-                         trace (update ::trace conj tag))]
-               [ctx ix tag])
-             nil)))
+             (let [ctx (-> ctx
+                           (update ::queue pop)
+                           (update ::stack conj ix))]
+               [ctx ix :enter])
+             (recur (assoc ctx ::stage (if error :error :leave))))
+    :leave (when-let [ix (peek stack)]
+             (let [ctx (-> ctx
+                           (assoc ::stage :final))]
+               [ctx ix :leave]))
+    :error (when-let [ix (peek stack)]
+             (let [ctx (-> ctx
+                           (assoc ::stage :final)
+                           (assoc ::handled? true))]
+               [ctx ix :error]))
+    :final (if (or (nil? error) handled?)
+             (if-let [ix (peek stack)]
+               (let [ctx (-> ctx
+                             (update ::stack pop)
+                             (dissoc ::handled?)
+                             (assoc ::stage (if error :error :leave)))]
+                 [ctx ix :final])
+               nil)
+             (recur (assoc ctx ::stage :error)))))
+
+(defn- move
+  [ctx]
+  (when-let [[ctx ix stage] (move* ctx)]
+    (let [tag [(identify ix) stage]
+          ctx (update ctx ::trace (fn [t] (when t
+                                            (if (= :final stage) t (conj t tag)))))]
+      [ctx (ix stage) tag])))
 
 (defn- evaluate
   "Evaluate the interceptor `ix` with the context `ctx`."
-  [ix {::keys [stage] :as ctx}]
-  (if-let [f (ix stage)]
+  [f ctx]
+  (if f
     (try (f ctx) (catch #?(:clj Throwable :cljs :default) e e))
     ctx))
 
 (defn- execute-sync
   [ctx]
-  (if-let [[ctx ix tag] (move ctx)]
-    (let [obj (evaluate ix ctx)
+  (if-let [[ctx f tag] (move ctx)]
+    (let [obj (evaluate f ctx)
           jump (partial transition ctx tag)]
       (recur (-> obj emerge jump)))
     (if-let [e (::error ctx)] (throw e) ctx)))
 
 (defn- execute-async
   [ctx callback]
-  (if-let [[ctx ix tag] (move ctx)]
-    (let [obj (evaluate ix ctx)
+  (if-let [[ctx f tag] (move ctx)]
+    (let [obj (evaluate f ctx)
           jump (partial transition ctx tag)
           continue (comp #(execute-async % callback) jump)]
       (emerge obj continue))
