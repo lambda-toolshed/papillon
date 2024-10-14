@@ -34,7 +34,9 @@
         expected-trace [[:ix-chrysalis :enter]
                         [:ix :enter]
                         [:ix :leave]
-                        [:ix-chrysalis :leave]]]
+                        [:ix :final]
+                        [:ix-chrysalis :leave]
+                        [:ix-chrysalis :final]]]
     #?(:clj (testing "sync"
               (let [result (ix/execute ixs $ctx)]
                 (is (= expected-trace (::ix/trace result)))
@@ -55,7 +57,9 @@
         expected-trace [[::hello :enter]
                         [::world :enter]
                         [::world :leave]
-                        [::hello :leave]]]
+                        [::world :final]
+                        [::hello :leave]
+                        [::hello :final]]]
     (test-async done
                 (let [c (async/chan)
                       callback (partial async/put! c)]

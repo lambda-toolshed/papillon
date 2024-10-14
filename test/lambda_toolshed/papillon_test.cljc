@@ -48,7 +48,7 @@
 
 (deftest baseline
   (let [ixs [ix-counter]
-        expected-trace [[:ix-counter :enter] [:ix-counter :leave]]]
+        expected-trace [[:ix-counter :enter] [:ix-counter :leave] [:ix-counter :final]]]
     (testing "sync"
       (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
@@ -84,7 +84,7 @@
 
 (deftest allows-for-interceptor-chain-of-only-enters
   (let [ixs [{:name :ix :enter identity}]
-        expected-trace [[:ix :enter] [:ix :leave]]]
+        expected-trace [[:ix :enter] [:ix :leave] [:ix :final]]]
     (testing "sync"
       (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
@@ -99,7 +99,7 @@
 
 (deftest allows-for-interceptor-chain-of-only-leaves
   (let [ixs [{:name :ix :leave identity}]
-        expected-trace [[:ix :enter] [:ix :leave]]]
+        expected-trace [[:ix :enter] [:ix :leave] [:ix :final]]]
     (testing "sync"
       (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
@@ -114,7 +114,7 @@
 
 (deftest allows-for-interceptor-chain-of-only-errors
   (let [ixs [{:name :ix :error identity}]
-        expected-trace [[:ix :enter] [:ix :leave]]]
+        expected-trace [[:ix :enter] [:ix :leave] [:ix :final]]]
     (testing "sync"
       (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
@@ -147,7 +147,9 @@
         expected-trace [[:ix-catch :enter]
                         [:ix-throw-on-enter :enter]
                         [:ix-throw-on-enter :error]
-                        [:ix-catch :error]]]
+                        [:ix-throw-on-enter :final]
+                        [:ix-catch :error]
+                        [:ix-catch :final]]]
     (testing "sync"
       (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
@@ -166,7 +168,9 @@
                         [:ix-throw-on-leave :enter]
                         [:ix-throw-on-leave :leave]
                         [:ix-throw-on-leave :error]
-                        [:ix-catch :error]]]
+                        [:ix-throw-on-leave :final]
+                        [:ix-catch :error]
+                        [:ix-catch :final]]]
     (testing "sync"
       (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
@@ -188,7 +192,9 @@
         expected-trace [[:ix-chrysalis :enter]
                         [:ix :enter]
                         [:ix :leave]
-                        [:ix-chrysalis :leave]]]
+                        [:ix :final]
+                        [:ix-chrysalis :leave]
+                        [:ix-chrysalis :final]]]
     #?(:clj (testing "sync"
               (let [result (ix/execute ixs $ctx)]
                 (is (= expected-trace (::ix/trace result)))
@@ -209,7 +215,9 @@
         expected-trace [[:ix-catch :enter]
                         [:ix-thrown-chrysalis :enter]
                         [:ix-thrown-chrysalis :error]
-                        [:ix-catch :error]]]
+                        [:ix-thrown-chrysalis :final]
+                        [:ix-catch :error]
+                        [:ix-catch :final]]]
     #?(:clj (testing "sync"
               (let [result (ix/execute ixs $ctx)]
                 (is (= expected-trace (::ix/trace result)))
@@ -229,7 +237,9 @@
         expected-trace [[:ix-catch :enter]
                         [:loser :enter]
                         [:loser :error]
-                        [:ix-catch :error]]]
+                        [:loser :final]
+                        [:ix-catch :error]
+                        [:ix-catch :final]]]
     (testing "sync"
       (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
@@ -251,7 +261,9 @@
                         [:ix-thrown-chrysalis :enter]
                         [:ix-thrown-chrysalis :leave]
                         [:ix-thrown-chrysalis :error]
-                        [:ix-catch :error]]]
+                        [:ix-thrown-chrysalis :final]
+                        [:ix-catch :error]
+                        [:ix-catch :final]]]
     #?(:clj (testing "sync"
               (let [result (ix/execute ixs $ctx)]
                 (is (= expected-trace (::ix/trace result)))
@@ -273,8 +285,11 @@
                         [:ix-throw-on-leave :enter]
                         [:ix-throw-on-leave :leave]
                         [:ix-throw-on-leave :error]
+                        [:ix-throw-on-leave :final]
                         [:ix-catch :error]
-                        [:ix :leave]]]
+                        [:ix-catch :final]
+                        [:ix :leave]
+                        [:ix :final]]]
     (testing "sync"
       (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
@@ -290,7 +305,8 @@
 (deftest reduced-context-stops-enter-chain-processing
   (let [ixs [{:name :reducer :enter reduced} ix]
         expected-trace [[:reducer :enter]
-                        [:reducer :leave]]]
+                        [:reducer :leave]
+                        [:reducer :final]]]
     (testing "sync"
       (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
@@ -311,9 +327,13 @@
                         [:ix-throw-on-leave :enter]
                         [:ix-throw-on-leave :leave]
                         [:ix-throw-on-leave :error]
+                        [:ix-throw-on-leave :final]
                         [:ix-throw-on-error :error]
+                        [:ix-throw-on-error :final]
                         [:ix-catch :error]
-                        [:ix :leave]]]
+                        [:ix-catch :final]
+                        [:ix :leave]
+                        [:ix :final]]]
     (testing "sync"
       (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))

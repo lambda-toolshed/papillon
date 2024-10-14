@@ -101,8 +101,7 @@
   [ctx]
   (when-let [[ctx ix stage] (move ctx)]
     (let [tag [(identify ix) stage]
-          ctx (update ctx ::trace (fn [t] (when t
-                                            (if (= :final stage) t (conj t tag)))))
+          ctx (update ctx ::trace (fn [t] (when t (conj t tag))))
           f (or (ix stage) identity)
           obj (try (f ctx) (catch #?(:clj Throwable :cljs :default) e e))]
       [ctx obj tag])))
