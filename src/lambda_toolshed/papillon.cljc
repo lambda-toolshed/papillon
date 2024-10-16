@@ -64,47 +64,34 @@
             (transition ctx tag e))))
 
 (defn- move
-  "Move to the next interceptor in the interceptor chain within `ctx`.  Returns
-  a three-tuple of the resulting context, the current interceptor and the
-  resulting stage keyword.  Returns nil if the chain has been consumed."
+  "Transition the given context `ctx` to the next state by modifying the queue,
+  stack and stage."
   [{::keys [queue stack stage error handled?] :as ctx}]
   (case stage
     :enter (if-let [ix (peek queue)]
-             (let [ctx (-> ctx
-                           (update ::queue pop)
-                           (update ::stack conj ix))]
-               [ctx ix :enter])
-             (recur (assoc ctx ::stage (if error :error :leave))))
-    :leave (when-let [ix (peek stack)]
-             (let [ctx (-> ctx
-                           (assoc ::stage :final))]
-               [ctx ix :leave]))
-    :error (when-let [ix (peek stack)]
-             (let [ctx (-> ctx
-                           (assoc ::stage :final)
-                           (assoc ::handled? true))]
-               [ctx ix :error]))
-    :final (if (or (nil? error) handled?)
-             (if-let [ix (peek stack)]
-               (let [ctx (-> ctx
-                             (update ::stack pop)
-                             (dissoc ::handled?)
-                             (assoc ::stage (if error :error :leave)))]
-                 [ctx ix :final])
-               nil)
-             (recur (assoc ctx ::stage :error)))))
+             (-> ctx
+                 (update ::queue pop)
+                 (update ::stack conj ix))
+             (-> ctx
+                 (assoc ::stage (if error :error :leave))))
+    :leave (-> ctx (assoc ::stage (if error :error :final)))
+    :error (-> ctx (assoc ::stage :final))
+    :final (-> ctx
+               (update ::stack pop)
+               (assoc ::stage (if error :error :leave)))))
 
 (defn- evaluate
   "Evaluate the next operation of the given context `ctx`. Returns a three-tuple
   of the context prior to interceptor execution, the emerge-able result of
   interceptor execution and a tag documenting the execution."
   [ctx]
-  (when-let [[ctx ix stage] (move ctx)]
-    (let [tag [(identify ix) stage]
-          ctx (update ctx ::trace (fn [t] (when t (conj t tag))))
-          f (or (ix stage) identity)
-          obj (try (f ctx) (catch #?(:clj Throwable :cljs :default) e e))]
-      [ctx obj tag])))
+  (let [{::keys [stage stack] :as ctx} (move ctx)]
+    (when-let [ix (peek stack)]
+      (let [tag [(identify ix) stage]
+            f (or (ix stage) identity)
+            ctx (update ctx ::trace (fn [t] (when t (conj t tag))))
+            obj (try (f ctx) (catch #?(:clj Throwable :cljs :default) e e))]
+        [ctx obj tag]))))
 
 (defn- execute-sync
   "Recursively execute the given context `ctx`, synchronously returning the

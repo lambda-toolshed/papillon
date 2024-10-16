@@ -345,3 +345,59 @@
                    (is (::x result))
                    (done))]
           (ix/execute ixs $ctx cb))))))
+
+(deftest context-represents-chain-state-contract
+  (let [recorder-fn (fn [{::ix/keys [queue stack stage] :as ctx}]
+                      (update ctx ::trace (fnil conj []) [(-> queue peek :name) (-> stack peek :name) stage]))
+        recorderA {:name ::A :enter recorder-fn :leave recorder-fn :error recorder-fn :final recorder-fn}
+        recorderB (assoc recorderA :name ::B)
+        ixs [recorderA recorderB]
+        expected-trace [[::B ::A :enter]
+                        [nil ::B :enter]
+                        [nil ::B :leave]
+                        [nil ::B :final]
+                        [nil ::A :leave]
+                        [nil ::A :final]]]
+    (testing "sync"
+      (let [result (ix/execute ixs $ctx)]
+        (is (= expected-trace (::trace result)))))
+    (testing "async"
+      (test-async done
+        (let [cb (fn [result]
+                   (is (= expected-trace (::trace result)))
+                   (done))]
+          (ix/execute ixs $ctx cb))))))
+
+(deftest processing-can-be-short-circuited
+  (testing "clear-queue"
+    (let [ixs [ix {:name :halter :enter ix/clear-queue} ix]
+          expected-trace [[:ix :enter]
+                          [:halter :enter]
+                          [:halter :leave]
+                          [:halter :final]
+                          [:ix :leave]
+                          [:ix :final]]]
+      (testing "sync"
+        (let [result (ix/execute ixs $ctx)]
+          (is (= expected-trace (::ix/trace result)))
+          (is (::x result))))
+      (testing "async"
+        (test-async done
+          (let [cb (fn [result]
+                     (is (= expected-trace (::ix/trace result)))
+                     (is (::x result))
+                     (done))]
+            (ix/execute ixs $ctx cb))))))
+  (testing "clear-stack"
+    (let [ixs [{:name ::ixA} {:name :halter :leave (fn [{:as ctx}] (update ctx ::ix/stack empty))} {:name ::ixB}]]
+      ;; Testing for a specific trace locks papillon into the current semantics whereby clearing the stack skips
+      ;; the :final stage.  This may or may not be the intended behavior in the long term.  Until then, beware.
+      (testing "sync"
+        (let [result (ix/execute ixs $ctx)]
+          (is (::x result))))
+      (testing "async"
+        (test-async done
+          (let [cb (fn [result]
+                     (is (::x result))
+                     (done))]
+            (ix/execute ixs $ctx cb)))))))
