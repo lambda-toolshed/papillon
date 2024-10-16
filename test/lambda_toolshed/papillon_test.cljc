@@ -8,6 +8,7 @@
 (def exception (ex-info "the exception" {}))
 (def ix-throw-on-enter {:name :ix-throw-on-enter :enter (fn [_] (throw exception))})
 (def ix-throw-on-leave {:name :ix-throw-on-leave :leave (fn [_] (throw exception))})
+(def ix-throw-on-error {:name :ix-throw-on-error :error (fn [_] (throw exception))})
 (def ix-catch
   {:name :ix-catch
    :error (fn [{error ::ix/error :as ctx}]
@@ -47,7 +48,7 @@
 
 (deftest baseline
   (let [ixs [ix-counter]
-        expected-trace [[:ix-counter :enter] [:ix-counter :leave]]]
+        expected-trace [[:ix-counter :enter] [:ix-counter :leave] [:ix-counter :final]]]
     (testing "sync"
       (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
@@ -83,7 +84,7 @@
 
 (deftest allows-for-interceptor-chain-of-only-enters
   (let [ixs [{:name :ix :enter identity}]
-        expected-trace [[:ix :enter] [:ix :leave]]]
+        expected-trace [[:ix :enter] [:ix :leave] [:ix :final]]]
     (testing "sync"
       (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
@@ -98,7 +99,7 @@
 
 (deftest allows-for-interceptor-chain-of-only-leaves
   (let [ixs [{:name :ix :leave identity}]
-        expected-trace [[:ix :enter] [:ix :leave]]]
+        expected-trace [[:ix :enter] [:ix :leave] [:ix :final]]]
     (testing "sync"
       (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
@@ -113,7 +114,7 @@
 
 (deftest allows-for-interceptor-chain-of-only-errors
   (let [ixs [{:name :ix :error identity}]
-        expected-trace [[:ix :enter] [:ix :leave]]]
+        expected-trace [[:ix :enter] [:ix :leave] [:ix :final]]]
     (testing "sync"
       (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
@@ -146,7 +147,9 @@
         expected-trace [[:ix-catch :enter]
                         [:ix-throw-on-enter :enter]
                         [:ix-throw-on-enter :error]
-                        [:ix-catch :error]]]
+                        [:ix-throw-on-enter :final]
+                        [:ix-catch :error]
+                        [:ix-catch :final]]]
     (testing "sync"
       (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
@@ -164,7 +167,10 @@
         expected-trace [[:ix-catch :enter]
                         [:ix-throw-on-leave :enter]
                         [:ix-throw-on-leave :leave]
-                        [:ix-catch :error]]]
+                        [:ix-throw-on-leave :error]
+                        [:ix-throw-on-leave :final]
+                        [:ix-catch :error]
+                        [:ix-catch :final]]]
     (testing "sync"
       (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
@@ -186,7 +192,9 @@
         expected-trace [[:ix-chrysalis :enter]
                         [:ix :enter]
                         [:ix :leave]
-                        [:ix-chrysalis :leave]]]
+                        [:ix :final]
+                        [:ix-chrysalis :leave]
+                        [:ix-chrysalis :final]]]
     #?(:clj (testing "sync"
               (let [result (ix/execute ixs $ctx)]
                 (is (= expected-trace (::ix/trace result)))
@@ -207,7 +215,9 @@
         expected-trace [[:ix-catch :enter]
                         [:ix-thrown-chrysalis :enter]
                         [:ix-thrown-chrysalis :error]
-                        [:ix-catch :error]]]
+                        [:ix-thrown-chrysalis :final]
+                        [:ix-catch :error]
+                        [:ix-catch :final]]]
     #?(:clj (testing "sync"
               (let [result (ix/execute ixs $ctx)]
                 (is (= expected-trace (::ix/trace result)))
@@ -227,7 +237,9 @@
         expected-trace [[:ix-catch :enter]
                         [:loser :enter]
                         [:loser :error]
-                        [:ix-catch :error]]]
+                        [:loser :final]
+                        [:ix-catch :error]
+                        [:ix-catch :final]]]
     (testing "sync"
       (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
@@ -248,7 +260,10 @@
         expected-trace [[:ix-catch :enter]
                         [:ix-thrown-chrysalis :enter]
                         [:ix-thrown-chrysalis :leave]
-                        [:ix-catch :error]]]
+                        [:ix-thrown-chrysalis :error]
+                        [:ix-thrown-chrysalis :final]
+                        [:ix-catch :error]
+                        [:ix-catch :final]]]
     #?(:clj (testing "sync"
               (let [result (ix/execute ixs $ctx)]
                 (is (= expected-trace (::ix/trace result)))
@@ -269,8 +284,12 @@
                         [:ix-catch :enter]
                         [:ix-throw-on-leave :enter]
                         [:ix-throw-on-leave :leave]
+                        [:ix-throw-on-leave :error]
+                        [:ix-throw-on-leave :final]
                         [:ix-catch :error]
-                        [:ix :leave]]]
+                        [:ix-catch :final]
+                        [:ix :leave]
+                        [:ix :final]]]
     (testing "sync"
       (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
@@ -286,7 +305,8 @@
 (deftest reduced-context-stops-enter-chain-processing
   (let [ixs [{:name :reducer :enter reduced} ix]
         expected-trace [[:reducer :enter]
-                        [:reducer :leave]]]
+                        [:reducer :leave]
+                        [:reducer :final]]]
     (testing "sync"
       (let [result (ix/execute ixs $ctx)]
         (is (= expected-trace (::ix/trace result)))
@@ -298,3 +318,86 @@
                    (is (::x result))
                    (done))]
           (ix/execute ixs $ctx cb))))))
+
+(deftest error-chain-is-continued-on-consecutive-throws
+  (let [ixs [ix ix-catch ix-throw-on-error ix-throw-on-leave]
+        expected-trace [[:ix :enter]
+                        [:ix-catch :enter]
+                        [:ix-throw-on-error :enter]
+                        [:ix-throw-on-leave :enter]
+                        [:ix-throw-on-leave :leave]
+                        [:ix-throw-on-leave :error]
+                        [:ix-throw-on-leave :final]
+                        [:ix-throw-on-error :error]
+                        [:ix-throw-on-error :final]
+                        [:ix-catch :error]
+                        [:ix-catch :final]
+                        [:ix :leave]
+                        [:ix :final]]]
+    (testing "sync"
+      (let [result (ix/execute ixs $ctx)]
+        (is (= expected-trace (::ix/trace result)))
+        (is (::x result))))
+    (testing "async"
+      (test-async done
+        (let [cb (fn [result]
+                   (is (= expected-trace (::ix/trace result)))
+                   (is (::x result))
+                   (done))]
+          (ix/execute ixs $ctx cb))))))
+
+(deftest context-represents-chain-state-contract
+  (let [recorder-fn (fn [{::ix/keys [queue stack stage] :as ctx}]
+                      (update ctx ::trace (fnil conj []) [(-> queue peek :name) (-> stack peek :name) stage]))
+        recorderA {:name ::A :enter recorder-fn :leave recorder-fn :error recorder-fn :final recorder-fn}
+        recorderB (assoc recorderA :name ::B)
+        ixs [recorderA recorderB]
+        expected-trace [[::B ::A :enter]
+                        [nil ::B :enter]
+                        [nil ::B :leave]
+                        [nil ::B :final]
+                        [nil ::A :leave]
+                        [nil ::A :final]]]
+    (testing "sync"
+      (let [result (ix/execute ixs $ctx)]
+        (is (= expected-trace (::trace result)))))
+    (testing "async"
+      (test-async done
+        (let [cb (fn [result]
+                   (is (= expected-trace (::trace result)))
+                   (done))]
+          (ix/execute ixs $ctx cb))))))
+
+(deftest processing-can-be-short-circuited
+  (testing "clear-queue"
+    (let [ixs [ix {:name :halter :enter ix/clear-queue} ix]
+          expected-trace [[:ix :enter]
+                          [:halter :enter]
+                          [:halter :leave]
+                          [:halter :final]
+                          [:ix :leave]
+                          [:ix :final]]]
+      (testing "sync"
+        (let [result (ix/execute ixs $ctx)]
+          (is (= expected-trace (::ix/trace result)))
+          (is (::x result))))
+      (testing "async"
+        (test-async done
+          (let [cb (fn [result]
+                     (is (= expected-trace (::ix/trace result)))
+                     (is (::x result))
+                     (done))]
+            (ix/execute ixs $ctx cb))))))
+  (testing "clear-stack"
+    (let [ixs [{:name ::ixA} {:name :halter :leave (fn [{:as ctx}] (update ctx ::ix/stack empty))} {:name ::ixB}]]
+      ;; Testing for a specific trace locks papillon into the current semantics whereby clearing the stack skips
+      ;; the :final stage.  This may or may not be the intended behavior in the long term.  Until then, beware.
+      (testing "sync"
+        (let [result (ix/execute ixs $ctx)]
+          (is (::x result))))
+      (testing "async"
+        (test-async done
+          (let [cb (fn [result]
+                     (is (::x result))
+                     (done))]
+            (ix/execute ixs $ctx cb)))))))

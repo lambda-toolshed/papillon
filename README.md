@@ -34,7 +34,7 @@ There are multiple libraries that include support for interceptors and even a fe
 
 #### Decouple the interceptors from HTTP requests.
 
-Sieppari was more focused on Interceptors only, but was based on the idea of a Request/Response model.
+Sieppari was more focused on Interceptors only, but was based on the idea of a Request/Response model.  Same for babashka's http client.
 
 With our goal to have interceptors be the prevalent pattern in our AWS Lambdas, we needed something that would fit with both the HTTP style of synchronous AWS Lambdas, as well as the asynchronous AWS Lambdas that consume their items from SQS queues, the idea of contorting a SQS message into a HTTP Request/Response was something we wanted to avoid.  We have found papillon is well suited to many source-to-sink-to-source type operations: HTTP request handling and issuing HTTP requests are but two examples.
 
@@ -44,7 +44,8 @@ We focused on what seemed to be the core of interceptors which is having an exec
 
 We have tried to leave out most everything else, as we found the interceptor chains can easily be modified to include many orthogonal concerns, allowing us to decomplect the interceptor execution from other useful but separate concerns.
 
-One example of something we have left out is logging. While it is useful to log the path through the interceptor chain, and modifications to the execution chain, we didn’t want to pick a logging library that consuming applications would inherit our decision on.
+One example of something we have left out is logging. While it is useful to log the path through the interceptor chain, and modifications to the execution chain, we didn’t want to pick a logging library that consuming applications would inherit our decision on.  It is, however,
+possible to have papillon record a trace of all executed operations.
 
 #### Data First
 
@@ -61,7 +62,7 @@ As noted above, papillon does not expose you to transitive dependencies.  The co
 We also would love to see some more abuses of interceptors as well, because it helps find the edges of what can(not) or should (not) be done with them.
 
 #### Async and Sync support
-We want papillon to support sync and async use cases and we find different interpretations of what that could mean, roughly divided into two arenas.
+We want papillon to support synchronous and asynchronous use cases and we find different interpretations of what that could mean, roughly divided into two arenas.
 1. Papillon allows interceptors to return deferred computations of the updated context.  An interceptor chain can contain a mix of interceptors that produce deferred results and interceptors that produce realized results; a given interceptor can even vary its return type conditionally.  We call an interceptor that returns a deferred type (more on that later) an "async interceptor."  By necessity, papillon always realizes the deferred result of an async interceptor before invoking the next interceptor in the chain.
 2. Papillon allows the result of executing the entire interceptor chain to be deferred, invoking a user-supplied callback function upon completion.  We call this an "async chain."
 
@@ -70,7 +71,7 @@ These two approaches can be mixed and matched:
 * Sync chain and sync interceptors: the baseline.  Appropriate for computation-focused chains or situations where the chain execution context has been managed by the developer prior to invocation.
 * Sync chain and async interceptors: useful for testing async interceptors and for reusing (possibly) async interceptors transparently in sync chains.
 * Async chain and sync interceptors: useful for reusing sync interceptors transparently in async chains.
-* Async chain and async interceptors: essentials for single-threaded environments like ClojureScript where otherwise blocking operations must yield to the event loop.
+* Async chain and async interceptors: essential for single-threaded environments like ClojureScript where otherwise blocking operations must yield to the event loop.
 
 By using a callback, papillon does not impose an async solution on developers.  It works equally well with promises (in Clojure or ClojureScript), core.async channels (in Clojure and ClojureScript), futures, etc.
 
@@ -104,27 +105,47 @@ This is the hungry caterpillar idea.
 
 The caterpillar starts at the top of the sandwich, and eats its way down through all the layers of the sandwich, some of which may be empty like the holes in some delicious Swiss cheese, or items only on one side of the sandwich; then when the caterpillar has exited the bottom, it chomps its way back up to the top on the other half of the sandwich resulting in a well fed caterpillar that is now a beautiful butterfly.
 
-Sometimes things go wrong, and the caterpillar eats something that didn't agree with it making it sick.  In that case, the caterpillar upon exiting that layer of the sandwich scurries to the outside of the sandwich, and starts walking up the outside crust taking nibbles of things here and there until something settles its indigestion, at which point it goes back into the sandwich once again, and continues to eat, or otherwise climbing back up the outside of the sandwich to the top where you get a sick caterpillar waiting for you.
+Sometimes things go wrong, and the caterpillar eats something that didn't agree with it making it sick.  In that case, the caterpillar scurries to the outside of the sandwich, and starts walking up the outside crust taking nibbles of things here and there until something settles its indigestion, at which point it goes back into the sandwich once again, and continues to eat, or otherwise climbing back up the outside of the sandwich to the top where you get a sick caterpillar waiting for you.
 
 <img src="./papillon-sandwich.png" alt="Drawing of a caterpillar atop a giant stacked sandwich with ingredients that go across the whole sandwich, and some that are on half only." height="1200"/>
 
 ### The Spec
 
-Interceptors are represented as a map with the optional keys of `:enter`, `:leave`, and `:error`.  None of the keys are required to be on an interceptor map, and if no truthy value for the key being checked is found on the interceptor map, the executor will supply a no-op function for that stage.  A `:name` can also provided, in which case there are some affordances for tracing the interceptor execution by name.
+Interceptors are represented as a map with the optional keys of `:enter`, `:leave`, `:error` and `:final`.  None of the keys are required to be on an interceptor map; if no function value for the current stage is found in the interceptor map, the chain executor will move to the next interceptor.  A `:name` can also provided, in which case there are some affordances for tracing the interceptor execution by name.
 
 The idea of sticking to a map instead of a record is that if the interceptor is a map, consumers can attach any other data to the interceptor, which the executor will ignored instead of actively discarding when converting to a record, allowing the extra keys and values on the interceptor map to be accessible while it exists on the queue or the stack in the context.
 
-#### Completing the Enter Stage
+#### The IN phase
+Execution of the chain starts in the IN phase.  During the IN phase, interceptors are removed from the queue and placed on the stack.  They are executed by invoking their `:enter` stage.
 
-##### Empty Queue of Interceptors
+##### The :enter Stage
+The `:enter` stage is the initial stage of the chain.  While in the `:enter` stage the chain is executed by invoking interceptors as they are removed the queue and placed on the stack.
 
-The `:enter` stage is considered complete when there are no more interceptors on the queue; at this point papillon will start processing the `:leave` stage of the interceptor chain from the accumulated stack.
+There are three ways to transition from the `:enter` stage:
+1. When the queue of remaining interceptors is empty, execution transitions to the `:leave` stage.
+2. When the interceptor returns a `reduced?` value, the queue is cleared and execution transitions to the `:leave` stage.
+3. When the interceptor throws (sync mode) or returns (async mode) an exception, execution transitions to the `:error` stage.
 
-##### Reduced Context
+#### The OUT phase
+During the OUT phase, interceptors are consumed from the stack after execution of their `:leave` and/or `:error` stages followed by their `:final` stage.  Invocation follows the `try...catch...finally` logic
+of Clojure itself.  The possible stage orderings are thus as follows:
 
-If the returned context from an `:enter` function is a reduced value, this is treated as a signal to stop further processing of the `:enter` stage and to start processing the `:leave` stage of the interceptor stack.
+A. `:leave`-`:final`: baseline; the ordering in the absence of any errors.
+B. `:leave`-`:error`-`:final`: when the `:leave` stage encounters an error.
+C. `:error`-`:final`: when an unhandled error from an inner interceptor has "bubbled" up.
 
-##### Raising, or Returning, an Error
+After the`:final` stage completes (regardless of outcome), the current interceptor is popped off the stack and execution continues.  When the stack is empty, the chain itself has been completely executed.
+
+##### The :leave Stage
+The `:leave` stage is executed from the interceptor at the top of the stack.  When the `:leave` stage of the interceptor throws (sync mode) or returns (async mode) an exception, chain execution transitions to the `:error` stage _starting with the current interceptor_.  If the `:leave` stage completes normally, the `:final` stage of the current interceptor is executed and the next interceptor from the stack is started in the `:leave` stage.
+
+##### The :error Stage
+The `:error` stage is executed from the interceptor at the top of the stack.   If the error at the `:lambda-toolshed.papillon/error` key is not cleared, the `:final` stage of the current interceptor is executed and the next interceptor from the stack is stared in the `:error` stage.  If it the error is cleared, the `:final` stage of the current interceptor is still executed, but the next interceptor from the stack is started in the `:leave` stage. 
+
+##### The :final Stage
+The `:final` stage is executed from the interceptor popped off the top of the stack.  The `:final` stage will be executed for every interceptor.  Idiomatically the `:final` stage should not alter the value at the `:lambda-toolshed.papillon/error` key of the context -behavior is undefined in this case.
+
+##### Notes on Raising, or Returning, an Error
 
 When an interceptor function throws or returns an error, e.g. ExceptionInfo, Throwable in Clojure, js/Error in Clojurescript, the queue, the error is added under the `:lambda-toolshed.papillon/error` key, and papillon begins processing the `:error` stage of the accumulated/remaining stack.  When papillon is processing the `:enter` stage of the queue, the accumulated stack will have the "current" interceptor at the head and exceptions will cause the `:error` stage of the same interceptor to be invoked.  However, when papillon is processing the `:leave` stage the current interceptor is removed from the stack prior to invoking the function and exceptions will thus advance to the next ("outward") interceptor.
 
